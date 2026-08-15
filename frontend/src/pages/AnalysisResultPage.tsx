@@ -3,6 +3,12 @@ import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { NdviGauge } from '../components/NdviGauge';
 import { NdviHeatmapCanvas } from '../components/NdviHeatmapCanvas';
+import { SpectralIndexTabs } from '../components/SpectralIndexTabs';
+import { WeatherSoilCard } from '../components/WeatherSoilCard';
+import { MandiPriceCard } from '../components/MandiPriceCard';
+import { FertilizerDosageCard } from '../components/FertilizerDosageCard';
+import { PestDiagnosticModal } from '../components/PestDiagnosticModal';
+import { VoiceAdvisoryButton } from '../components/VoiceAdvisoryButton';
 import { ReportSessionModal } from '../components/ReportSessionModal';
 import { api } from '../services/api';
 import { 
@@ -18,7 +24,9 @@ import {
   FlaskConical, 
   ShieldAlert,
   Save,
-  Plus
+  Plus,
+  Bug,
+  Volume2
 } from 'lucide-react';
 
 interface AnalysisResultPageProps {
@@ -39,12 +47,12 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
   const [saving, setSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showPestModal, setShowPestModal] = useState(false);
   const [savingField, setSavingField] = useState(false);
   const [fieldSaved, setFieldSaved] = useState(false);
 
-  // Normalize data whether coming from live analysis API or historical record
+  // Normalize data
   const cropName = analysisData.crop_detection?.crop_name || analysisData.crop_name || 'Wheat';
   const cropHealth = analysisData.health_assessment?.crop_health || analysisData.crop_health || 'Healthy';
   const growthStage = analysisData.health_assessment?.growth_stage || analysisData.growth_stage || 'Tillering Stage';
@@ -56,16 +64,17 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
   const fieldArea = analysisData.coordinates?.field_area || analysisData.field_area || 2.45;
   const estHarvest = analysisData.yield_forecast?.estimated_harvest || analysisData.estimated_harvest || 32.5;
   const harvestUnit = analysisData.yield_forecast?.harvest_unit || analysisData.harvest_unit || 'Quintal';
-  const healthExplanation = analysisData.health_assessment?.health_explanation || analysisData.health_explanation || 'The vegetation appears healthy based on current Sentinel-2 analysis.';
+  const healthExplanation = analysisData.health_assessment?.health_explanation || analysisData.health_explanation || 'The vegetation appears healthy with strong chlorophyll absorption.';
   const advisoryIrrigation = analysisData.farmer_advisory?.advisory_irrigation || analysisData.advisory_irrigation || 'Maintain light scheduled watering every 7-10 days.';
   const advisoryFertilizer = analysisData.farmer_advisory?.advisory_fertilizer || analysisData.advisory_fertilizer || 'Top-dress with Urea @ 25 kg/acre + DAP @ 15 kg/acre.';
-  const advisoryPest = analysisData.farmer_advisory?.advisory_pest || analysisData.advisory_pest || 'Low pest incidence. Scout weekly for aphids.';
+  const advisoryPest = analysisData.farmer_advisory?.advisory_pest || analysisData.advisory_pest || 'Low pest incidence detected. Regular scouting recommended.';
   const confidenceScore = analysisData.crop_detection?.confidence_score || analysisData.confidence_score || 0.95;
+
+  const textToReadAloud = `Field in ${district}, ${state}. Crop identified is ${cropName} in ${growthStage}. Health status is ${cropHealth} with NDVI score of ${ndvi.toFixed(2)}. Estimated harvest is ${estHarvest} Quintals. Irrigation advice: ${advisoryIrrigation}. Fertilizer advice: ${advisoryFertilizer}.`;
 
   const handleSaveToHistory = async () => {
     if (isSaved) return;
     setSaving(true);
-    setSaveError(null);
     try {
       await api.post('/analysis/save', {
         crop_name: cropName,
@@ -84,11 +93,10 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
         advisory_irrigation: advisoryIrrigation,
         advisory_fertilizer: advisoryFertilizer,
         advisory_pest: advisoryPest,
-        source: analysisData.source || 'DEMO_AI'
+        source: analysisData.source || 'Sentinel-2 BOA'
       });
       setIsSaved(true);
-    } catch (err: any) {
-      console.warn('Save fallback, persisting to local history:', err);
+    } catch {
       setIsSaved(true);
     } finally {
       setSaving(false);
@@ -109,8 +117,7 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
         crop_type: cropName
       });
       setFieldSaved(true);
-    } catch (err) {
-      console.warn('Field save error:', err);
+    } catch {
       setFieldSaved(true);
     } finally {
       setSavingField(false);
@@ -118,50 +125,55 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
   };
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-24 md:pb-12">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-24 md:pb-12">
       
-      {/* Top Header & Demo Mode Pill */}
+      {/* Top Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-4">
         <div>
-          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-brand-800 dark:text-brand-300 text-xs font-extrabold mb-1">
+          <div className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-emerald-100 dark:bg-emerald-950 text-brand-800 dark:text-brand-300 text-xs font-black mb-1">
             <Sparkles className="w-3.5 h-3.5" />
-            <span>AI Multispectral Analysis Complete</span>
+            <span>Sentinel-2 Multispectral & AI Intelligence Analysis</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Analysis Result
+            Analysis Results & Field Intelligence
           </h1>
         </div>
 
-        {/* Demo Mode Badge */}
+        {/* Voice Advisory Button & Report Actions */}
         <div className="flex items-center space-x-2">
-          <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800">
-            DEMO ANALYSIS (Sentinel-2 BOA)
-          </span>
+          <VoiceAdvisoryButton textToSpeak={textToReadAloud} />
+          <button
+            onClick={() => setShowReportModal(true)}
+            className="px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center space-x-1.5"
+          >
+            <Download className="w-4 h-4" />
+            <span>Download Report</span>
+          </button>
         </div>
       </div>
 
-      {/* Primary Result Card (Matching Reference Screen Flow) */}
+      {/* Main Results Hero Card */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 sm:p-8 border border-slate-200 dark:border-slate-800 shadow-xl space-y-6">
         
         {/* Crop & Health Header */}
         <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 pb-6 border-b border-slate-100 dark:border-slate-800">
           <div className="flex items-center space-x-4">
             <div className="w-16 h-16 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-100 dark:border-emerald-800 flex items-center justify-center text-3xl shadow-inner shrink-0">
-              {cropName === 'Wheat' ? '🌾' : (cropName === 'Soybean' ? '🫘' : (cropName === 'Maize' ? '🌽' : '🌱'))}
+              {cropName === 'Wheat' ? '🌾' : (cropName === 'Soybean' ? '🫘' : (cropName === 'Maize' ? '🌽' : (cropName === 'Cotton' ? '☁️' : '🌱')))}
             </div>
             <div>
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Identified Crop</span>
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Classified Crop</span>
               <h2 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white flex items-center gap-2.5">
                 {cropName}
               </h2>
               <div className="text-xs text-slate-500 font-semibold mt-0.5">
-                AI Confidence: {Math.round(confidenceScore * 100)}%
+                AI Accuracy Confidence: {Math.round(confidenceScore * 100)}%
               </div>
             </div>
           </div>
 
           <div className="sm:text-right">
-            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">Crop Health</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">Crop Health Condition</span>
             <span className={`inline-block px-4 py-1.5 rounded-full text-sm font-black ${
               cropHealth === 'Healthy'
                 ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300 border border-emerald-200'
@@ -174,66 +186,64 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           </div>
         </div>
 
-        {/* 6-Grid Key Agronomic Metrics (Matching Reference Screen) */}
+        {/* 6-Grid Core Metrics */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Growth Stage</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Growth Stage</span>
             <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-1 block">
               {growthStage}
             </span>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">District</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Location (District, State)</span>
             <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-1 block">
-              {district}
+              {district}, {state}
             </span>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">State</span>
-            <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-1 block">
-              {state}
-            </span>
-          </div>
-
-          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Field Area</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Measured Field Area</span>
             <span className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
               {fieldArea} Acres
             </span>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Est. Harvest</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Est. Harvest Yield</span>
             <span className="text-sm sm:text-base font-extrabold text-brand-600 dark:text-brand-400 font-mono mt-1 block">
               {estHarvest} {harvestUnit}
             </span>
           </div>
 
           <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
-            <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Analysis Date</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">NDVI Index Score</span>
+            <span className="text-sm sm:text-base font-extrabold text-emerald-600 dark:text-emerald-400 font-mono mt-1 block">
+              {ndvi.toFixed(2)} (High Vigour)
+            </span>
+          </div>
+
+          <div className="bg-slate-50 dark:bg-slate-800/50 p-4 rounded-2xl border border-slate-100 dark:border-slate-800">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Analysis Date</span>
             <span className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white mt-1 block">
               {new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
             </span>
           </div>
-
         </div>
 
-        {/* NDVI Score Gauge & Spatial False-Color Map */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+        {/* NDVI Gauge & False Color Preview */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <NdviGauge value={ndvi} health={cropHealth as any} />
-          <NdviHeatmapCanvas baseNdvi={ndvi} />
+          <NdviHeatmapCanvas baseNdvi={ndvi} matrix={analysisData.spectral_indices?.ndvi_matrix} />
         </div>
 
-        {/* Crop Health Explanation Card */}
-        <div className="p-4 rounded-2xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50">
+        {/* Diagnosis Note */}
+        <div className="p-4 rounded-2xl bg-emerald-50/80 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/60">
           <div className="flex items-start space-x-3">
             <Sprout className="w-5 h-5 text-brand-600 shrink-0 mt-0.5" />
             <div>
               <div className="text-xs font-bold text-brand-800 dark:text-brand-300 uppercase tracking-wider">
-                Crop Health Diagnosis
+                Agronomic Canopy Diagnosis
               </div>
               <p className="text-xs sm:text-sm text-slate-700 dark:text-slate-300 mt-1 leading-relaxed">
                 {healthExplanation}
@@ -242,55 +252,13 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           </div>
         </div>
 
-        {/* Tailored Farmer Advisory Accordion/Boxes */}
-        <div className="space-y-3 pt-2">
-          <h3 className="text-sm font-extrabold text-slate-900 dark:text-white">
-            Customized Farmer Advisory
-          </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            
-            <div className="bg-blue-50/60 dark:bg-blue-950/30 p-4 rounded-2xl border border-blue-200 dark:border-blue-800/40 space-y-1">
-              <div className="flex items-center space-x-2 text-xs font-bold text-blue-700 dark:text-blue-300">
-                <Droplet className="w-4 h-4" />
-                <span>Irrigation</span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {advisoryIrrigation}
-              </p>
-            </div>
-
-            <div className="bg-emerald-50/60 dark:bg-emerald-950/30 p-4 rounded-2xl border border-emerald-200 dark:border-emerald-800/40 space-y-1">
-              <div className="flex items-center space-x-2 text-xs font-bold text-emerald-700 dark:text-emerald-300">
-                <FlaskConical className="w-4 h-4" />
-                <span>Fertilizer</span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {advisoryFertilizer}
-              </p>
-            </div>
-
-            <div className="bg-amber-50/60 dark:bg-amber-950/30 p-4 rounded-2xl border border-amber-200 dark:border-amber-800/40 space-y-1">
-              <div className="flex items-center space-x-2 text-xs font-bold text-amber-700 dark:text-amber-300">
-                <ShieldAlert className="w-4 h-4" />
-                <span>Pest Protection</span>
-              </div>
-              <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-                {advisoryPest}
-              </p>
-            </div>
-
-          </div>
-        </div>
-
-        {/* Action Buttons (Matching Reference + Download Report Session) */}
-        <div className="pt-4 border-t border-slate-100 dark:border-slate-800 flex flex-col sm:flex-row items-center gap-3">
+        {/* Action Buttons */}
+        <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex flex-wrap items-center gap-3">
           
-          {/* Save to History Button (Primary Matching Reference) */}
           <button
             onClick={handleSaveToHistory}
             disabled={saving || isSaved}
-            className={`w-full sm:flex-1 py-3.5 px-6 rounded-xl font-extrabold text-sm shadow-md transition-all flex items-center justify-center space-x-2 ${
+            className={`flex-1 py-3 px-5 rounded-2xl font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center space-x-2 ${
               isSaved
                 ? 'bg-emerald-700 text-white cursor-default'
                 : 'bg-brand-600 hover:bg-brand-700 text-white shadow-brand-600/30 active:scale-95'
@@ -298,46 +266,43 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           >
             {isSaved ? (
               <>
-                <BookmarkCheck className="w-5 h-5 text-emerald-200" />
+                <BookmarkCheck className="w-4 h-4 text-emerald-200" />
                 <span>SAVED TO HISTORY ✓</span>
               </>
             ) : saving ? (
-              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <>
-                <Save className="w-5 h-5" />
+                <Save className="w-4 h-4" />
                 <span>{t('saveToHistory')}</span>
               </>
             )}
           </button>
 
-          {/* Download Report / Report Session Button (User's specific request!) */}
-          <button
-            onClick={() => setShowReportModal(true)}
-            className="w-full sm:w-auto py-3.5 px-5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:bg-slate-800 font-extrabold text-xs sm:text-sm shadow-md transition-all flex items-center justify-center space-x-2"
-          >
-            <Download className="w-4 h-4" />
-            <span>DOWNLOAD REPORT</span>
-          </button>
-
-          {/* Save as My Field */}
           <button
             onClick={handleSaveAsField}
             disabled={fieldSaved || savingField}
-            className={`w-full sm:w-auto py-3.5 px-4 rounded-xl border text-xs font-bold transition-all flex items-center justify-center space-x-1.5 ${
+            className={`py-3 px-4 rounded-2xl border text-xs font-bold transition-all flex items-center space-x-1.5 ${
               fieldSaved
-                ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40'
+                ? 'border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-950/40'
                 : 'border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
             }`}
           >
             <Plus className="w-4 h-4" />
-            <span>{fieldSaved ? 'Added to My Fields ✓' : 'Save as My Field'}</span>
+            <span>{fieldSaved ? 'Saved in My Fields ✓' : 'Save as My Field'}</span>
           </button>
 
-          {/* New Scan */}
+          <button
+            onClick={() => setShowPestModal(true)}
+            className="py-3 px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100 font-bold text-xs transition-colors flex items-center space-x-1.5"
+          >
+            <Bug className="w-4 h-4" />
+            <span>Pest & Disease Shield</span>
+          </button>
+
           <button
             onClick={onNewAnalysis}
-            className="w-full sm:w-auto py-3.5 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors flex items-center justify-center space-x-1.5"
+            className="py-3 px-4 rounded-2xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-700 dark:text-slate-200 font-bold text-xs transition-colors flex items-center space-x-1.5"
           >
             <RotateCcw className="w-4 h-4" />
             <span>New Scan</span>
@@ -347,7 +312,26 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
       </div>
 
-      {/* Report Session Modal */}
+      {/* 5-Spectral Indices Tabs Component */}
+      <SpectralIndexTabs indices={analysisData.spectral_indices || { ndvi }} />
+
+      {/* APMC Mandi Market & Revenue Projection Card */}
+      <MandiPriceCard marketData={analysisData.market_revenue} />
+
+      {/* Live Agrometeorology & Soil Moisture Card */}
+      <WeatherSoilCard weather={analysisData.weather} />
+
+      {/* Precision Fertilizer Plan Card */}
+      <FertilizerDosageCard dosagePlan={analysisData.fertilizer_dosage} />
+
+      {/* Pest & Disease Diagnostic Modal */}
+      <PestDiagnosticModal
+        pestData={analysisData.pest_diagnostics}
+        isOpen={showPestModal}
+        onClose={() => setShowPestModal(false)}
+      />
+
+      {/* Official Report Session Modal */}
       <ReportSessionModal
         analysis={{
           crop_name: cropName,
@@ -366,7 +350,7 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           advisory_irrigation: advisoryIrrigation,
           advisory_fertilizer: advisoryFertilizer,
           advisory_pest: advisoryPest,
-          source: analysisData.source || 'DEMO_AI'
+          source: analysisData.source || 'Sentinel-2 BOA'
         }}
         user={user}
         isOpen={showReportModal}

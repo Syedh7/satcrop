@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config import settings
 from .database import engine, Base
 from .seed_data import seed_database
-from .routers import auth, fields, analysis, reports, dashboard, geo
+from .routers import auth, fields, analysis, reports, dashboard, geo, weather, market, pest, fertilizer
 
 # Initialize SQLite database and seed initial data
 Base.metadata.create_all(bind=engine)
@@ -31,6 +31,10 @@ app.include_router(analysis.router, prefix=settings.API_PREFIX)
 app.include_router(reports.router, prefix=settings.API_PREFIX)
 app.include_router(dashboard.router, prefix=settings.API_PREFIX)
 app.include_router(geo.router, prefix=settings.API_PREFIX)
+app.include_router(weather.router, prefix=settings.API_PREFIX)
+app.include_router(market.router, prefix=settings.API_PREFIX)
+app.include_router(pest.router, prefix=settings.API_PREFIX)
+app.include_router(fertilizer.router, prefix=settings.API_PREFIX)
 
 @app.get("/health")
 def health_check():

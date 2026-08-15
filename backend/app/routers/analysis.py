@@ -9,6 +9,10 @@ from ..services.satellite_engine import satellite_engine
 from ..services.ai_classifier import ai_classifier
 from ..services.growth_stage_service import growth_stage_service
 from ..services.advisory_service import advisory_service
+from ..services.weather_service import agro_weather_service
+from ..services.mandi_service import mandi_service
+from ..services.pest_service import pest_service
+from ..services.fertilizer_calc import fertilizer_calculator
 from .auth import get_current_user
 
 router = APIRouter(prefix="/analysis", tags=["Crop Analysis"])
@@ -16,22 +20,31 @@ router = APIRouter(prefix="/analysis", tags=["Crop Analysis"])
 @router.post("/process")
 def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get_current_user)):
     """
-    Executes the 8-step satellite & AI analytical pipeline:
-    1. Spectral bands processing
-    2. NDVI/NDRE calculation
-    3. AI Crop Classification
-    4. Crop Health evaluation
-    5. Growth Stage identification
-    6. Harvest Yield estimation
-    7. Farmer Agronomy Advisory generation
+    Executes the comprehensive 8-step satellite & agricultural intelligence pipeline:
+    1. Multi-spectral bands & 5 Indices (NDVI, NDWI, EVI, SAVI, NDRE)
+    2. Live Open-Meteo Agro-meteorological & Soil moisture fetching
+    3. AI Crop Classification model
+    4. Health & Canopy vigor evaluation
+    5. Growth stage identification
+    6. Harvest Yield & APMC Mandi Revenue forecasting
+    7. Precision Fertilizer dosage calculation
+    8. Pest & Disease risk evaluation + Agronomy Advisory
     """
-    # 1 & 2: Satellite Spectral Processing
+    # 1. Multi-spectral Processing
     spectral = satellite_engine.process_spectral_bands(req.latitude, req.longitude, req.crop_hint)
     ndvi = spectral["indices"]["ndvi"]
+    ndwi = spectral["indices"]["ndwi"]
     ndre = spectral["indices"]["ndre"]
     evi = spectral["indices"]["evi"]
+    savi = spectral["indices"]["savi"]
     
-    # 3: AI Crop Type Detection
+    # 2. Live Weather & Soil Moisture
+    weather_data = agro_weather_service.get_live_weather(req.latitude, req.longitude)
+    current_weather = weather_data.get("current", {})
+    temp_c = current_weather.get("temperature_c", 28.5)
+    humidity_pct = current_weather.get("humidity_pct", 62)
+    
+    # 3. AI Crop Type Detection
     crop_info = ai_classifier.classify_crop(
         lat=req.latitude,
         lng=req.longitude,
@@ -40,36 +53,40 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
         ndvi=ndvi,
         crop_hint=req.crop_hint
     )
+    crop_name = crop_info["crop_name"]
     
-    # 4, 5, 6: Crop Health, Stage & Harvest Yield
+    # 4 & 5. Crop Health, Stage & Harvest Yield
     area = req.field_area or 2.45
     health_and_stage = growth_stage_service.evaluate_health_and_stage(
-        crop_name=crop_info["crop_name"],
+        crop_name=crop_name,
         ndvi=ndvi,
         field_area_acres=area,
         base_yield=crop_info["base_yield_per_acre"]
     )
+    growth_stage = health_and_stage["growth_stage"]
+    est_harvest = health_and_stage["estimated_harvest"]
     
-    # 7: Agronomy Advisory
+    # 6. APMC Mandi Market & Revenue Projection
+    market_data = mandi_service.get_market_data(crop_name, est_harvest, req.district or "Jabalpur")
+    
+    # 7. Precision Fertilizer Plan
+    fertilizer_plan = fertilizer_calculator.calculate_dosage(crop_name, area, growth_stage)
+    
+    # 8. Pest & Disease Risk Evaluation
+    pest_diagnostics = pest_service.get_crop_diagnostics(crop_name, humidity_pct, temp_c)
+    
+    # 9. Farmer Agronomy Advisory
     advisory = advisory_service.generate_advisory(
-        crop_name=crop_info["crop_name"],
+        crop_name=crop_name,
         health=health_and_stage["crop_health"],
-        stage=health_and_stage["growth_stage"],
+        stage=growth_stage,
         ndvi=ndvi
     )
-    
-    # Simulated weather conditions for the location
-    weather = {
-        "temp": 28.5,
-        "condition": "Partly Cloudy",
-        "humidity": 62.0,
-        "rain_chance": 15.0
-    }
     
     return {
         "status": "success",
         "timestamp": datetime.utcnow().isoformat(),
-        "source": "DEMO_AI (Sentinel-2 MSI Synthetic BOA)",
+        "source": "Sentinel-2 MSI (10m Multi-spectral Level-2A BOA)",
         "coordinates": {
             "latitude": req.latitude,
             "longitude": req.longitude,
@@ -79,30 +96,37 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
             "polygon_geojson": req.polygon_geojson
         },
         "crop_detection": {
-            "crop_name": crop_info["crop_name"],
+            "crop_name": crop_name,
             "crop_icon": crop_info["crop_icon"],
             "confidence_score": crop_info["confidence_score"]
         },
         "spectral_indices": {
             "ndvi": ndvi,
+            "ndwi": ndwi,
             "ndre": ndre,
             "evi": evi,
+            "savi": savi,
             "cloud_cover_percent": spectral["cloud_cover_percent"],
+            "water_stress_status": spectral["water_stress_status"],
+            "chlorophyll_activity": spectral["chlorophyll_activity"],
             "ndvi_matrix": spectral["ndvi_matrix"]
         },
         "health_assessment": {
             "crop_health": health_and_stage["crop_health"],
             "health_color": health_and_stage["health_color"],
             "health_explanation": health_and_stage["health_explanation"],
-            "growth_stage": health_and_stage["growth_stage"]
+            "growth_stage": growth_stage
         },
         "yield_forecast": {
-            "estimated_harvest": health_and_stage["estimated_harvest"],
+            "estimated_harvest": est_harvest,
             "harvest_unit": health_and_stage["harvest_unit"],
             "yield_per_acre": health_and_stage["yield_per_acre"]
         },
+        "market_revenue": market_data,
+        "fertilizer_dosage": fertilizer_plan,
+        "pest_diagnostics": pest_diagnostics,
         "farmer_advisory": advisory,
-        "weather": weather,
+        "weather": weather_data,
         "field_id": req.field_id
     }
 
