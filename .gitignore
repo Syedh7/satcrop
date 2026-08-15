@@ -1,0 +1,28 @@
+# Node dependencies
+node_modules/
+dist/
+.vite/
+npm-debug.log*
+
+# Python & virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.env
+.venv/
+env/
+venv/
+*.db
+*.sqlite3
+
+# Android Studio / Gradle build artifacts
+.gradle/
+build/
+app/build/
+*.apk
+*.aab
+local.properties
+.idea/
+*.iml
+.DS_Store
+Thumbs.db

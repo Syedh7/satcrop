@@ -1,0 +1,12 @@
+{
+  "appId": "com.satcrop.app",
+  "appName": "SatCrop",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "android": {
+    "allowMixedContent": true
+  }
+}

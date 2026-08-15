@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">SatCrop</string>
+    <string name="title_activity_main">SatCrop</string>
+    <string name="package_name">com.satcrop.app</string>
+    <string name="custom_url_scheme">com.satcrop.app</string>
+</resources>
