@@ -7,7 +7,10 @@ import { SpectralIndexTabs } from '../components/SpectralIndexTabs';
 import { WeatherSoilCard } from '../components/WeatherSoilCard';
 import { MandiPriceCard } from '../components/MandiPriceCard';
 import { FertilizerDosageCard } from '../components/FertilizerDosageCard';
+import { SmartIrrigationCard } from '../components/SmartIrrigationCard';
+import { NdviTrendChart } from '../components/NdviTrendChart';
 import { PestDiagnosticModal } from '../components/PestDiagnosticModal';
+import { LeafDoctorModal } from '../components/LeafDoctorModal';
 import { VoiceAdvisoryButton } from '../components/VoiceAdvisoryButton';
 import { ReportSessionModal } from '../components/ReportSessionModal';
 import { CropTimelineCard } from '../components/CropTimelineCard';
@@ -30,7 +33,8 @@ import {
   Plus,
   Bug,
   Volume2,
-  Calculator
+  Calculator,
+  Stethoscope
 } from 'lucide-react';
 
 interface AnalysisResultPageProps {
@@ -54,6 +58,7 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
   const [showReportModal, setShowReportModal] = useState(false);
   const [showPestModal, setShowPestModal] = useState(false);
   const [showProfitModal, setShowProfitModal] = useState(false);
+  const [showLeafDoctorModal, setShowLeafDoctorModal] = useState(false);
   const [savingField, setSavingField] = useState(false);
   const [fieldSaved, setFieldSaved] = useState(false);
 
@@ -310,6 +315,14 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           </button>
 
           <button
+            onClick={() => setShowLeafDoctorModal(true)}
+            className="py-3 px-4 rounded-2xl bg-teal-50 dark:bg-teal-950/60 border border-teal-200 dark:border-teal-800 text-teal-800 dark:text-teal-300 hover:bg-teal-100 font-bold text-xs transition-colors flex items-center space-x-1.5"
+          >
+            <Stethoscope className="w-4 h-4" />
+            <span>Scan Leaf Photo</span>
+          </button>
+
+          <button
             onClick={() => setShowProfitModal(true)}
             className="py-3 px-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-brand-800 dark:text-brand-300 hover:bg-emerald-100 font-bold text-xs transition-colors flex items-center space-x-1.5"
           >
@@ -337,6 +350,12 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
       </div>
 
+      {/* Satellite Multi-Temporal NDVI Trajectory Chart */}
+      <NdviTrendChart timeseriesData={analysisData.satellite_timeseries} />
+
+      {/* Smart Precision Irrigation Requirement & Pump Run Time */}
+      <SmartIrrigationCard irrigationPlan={analysisData.irrigation_plan} />
+
       {/* Crop Growth Phenological Timeline Tracker */}
       <CropTimelineCard cropName={cropName} currentStage={growthStage} />
 
@@ -351,6 +370,13 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
       {/* Precision Fertilizer Plan Card */}
       <FertilizerDosageCard dosagePlan={analysisData.fertilizer_dosage} />
+
+      {/* Leaf Doctor Modal */}
+      <LeafDoctorModal
+        cropName={cropName}
+        isOpen={showLeafDoctorModal}
+        onClose={() => setShowLeafDoctorModal(false)}
+      />
 
       {/* Profit & Input Cost Calculator Modal */}
       <ProfitCalculatorModal

@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { HealthDonutChart } from '../components/HealthDonutChart';
+import { LeafDoctorModal } from '../components/LeafDoctorModal';
+import { KrishiSchemesModal } from '../components/KrishiSchemesModal';
 import { api } from '../services/api';
 import { DashboardStats, Analysis } from '../types';
 import { 
@@ -21,7 +23,10 @@ import {
   Droplets,
   Store,
   Bug,
-  Calculator
+  Calculator,
+  Stethoscope,
+  Landmark,
+  Waves
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -34,6 +39,10 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
   const { t } = useLanguage();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Modals state
+  const [showLeafDoctor, setShowLeafDoctor] = useState<boolean>(false);
+  const [showSchemes, setShowSchemes] = useState<boolean>(false);
 
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -169,6 +178,47 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
               Humidity: {stats?.weather?.humidity || 62}% • Rain: {stats?.weather?.rain_probability || 15}%
             </div>
           </div>
+        </div>
+
+      </div>
+
+      {/* Specialty Diagnostics & Advisory Strip */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        
+        {/* Leaf Doctor Scanner Card */}
+        <div
+          onClick={() => setShowLeafDoctor(true)}
+          className="bg-gradient-to-r from-emerald-800 to-teal-900 text-white rounded-3xl p-5 shadow-md hover:shadow-xl cursor-pointer transition-all flex items-center justify-between border border-emerald-700/50"
+        >
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0">
+              <Stethoscope className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-200 block">AI Computer Vision</span>
+              <h3 className="text-base font-black text-white">Leaf Doctor & Disease Scanner</h3>
+              <p className="text-xs text-emerald-100 mt-0.5">Upload or snap photo of infected leaf for instant diagnosis</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-emerald-200 shrink-0" />
+        </div>
+
+        {/* Krishi Schemes Card */}
+        <div
+          onClick={() => setShowSchemes(true)}
+          className="bg-gradient-to-r from-amber-800 to-stone-900 text-white rounded-3xl p-5 shadow-md hover:shadow-xl cursor-pointer transition-all flex items-center justify-between border border-amber-700/50"
+        >
+          <div className="flex items-center space-x-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-white/20 backdrop-blur-md flex items-center justify-center text-white shrink-0">
+              <Landmark className="w-6 h-6" />
+            </div>
+            <div>
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-amber-200 block">Subsidies & Relief</span>
+              <h3 className="text-base font-black text-white">Krishi Schemes & Subsidies</h3>
+              <p className="text-xs text-amber-100 mt-0.5">PM-KISAN, PMFBY, SMAM, and Drip Subsidy Guide</p>
+            </div>
+          </div>
+          <ChevronRight className="w-5 h-5 text-amber-200 shrink-0" />
         </div>
 
       </div>
@@ -369,6 +419,19 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
           })}
         </div>
       </div>
+
+      {/* Leaf Doctor Modal */}
+      <LeafDoctorModal
+        isOpen={showLeafDoctor}
+        onClose={() => setShowLeafDoctor(false)}
+        cropName="Wheat"
+      />
+
+      {/* Krishi Schemes Modal */}
+      <KrishiSchemesModal
+        isOpen={showSchemes}
+        onClose={() => setShowSchemes(false)}
+      />
 
     </div>
   );

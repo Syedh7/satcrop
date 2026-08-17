@@ -1,6 +1,6 @@
 from typing import List, Optional
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import Analysis, User, Field
@@ -13,6 +13,9 @@ from ..services.weather_service import agro_weather_service
 from ..services.mandi_service import mandi_service
 from ..services.pest_service import pest_service
 from ..services.fertilizer_calc import fertilizer_calculator
+from ..services.irrigation_service import irrigation_service
+from ..services.timeseries_service import timeseries_service
+from ..services.leaf_doctor_service import leaf_doctor_service
 from .auth import get_current_user
 
 router = APIRouter(prefix="/analysis", tags=["Crop Analysis"])
@@ -28,7 +31,9 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
     5. Growth stage identification
     6. Harvest Yield & APMC Mandi Revenue forecasting
     7. Precision Fertilizer dosage calculation
-    8. Pest & Disease risk evaluation + Agronomy Advisory
+    8. Smart Irrigation volume & pump run time calculation
+    9. Multi-temporal satellite NDVI time-series history
+    10. Pest & Disease risk evaluation + Agronomy Advisory
     """
     # 1. Multi-spectral Processing
     spectral = satellite_engine.process_spectral_bands(req.latitude, req.longitude, req.crop_hint)
@@ -43,6 +48,7 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
     current_weather = weather_data.get("current", {})
     temp_c = current_weather.get("temperature_c", 28.5)
     humidity_pct = current_weather.get("humidity_pct", 62)
+    avg_et0 = weather_data.get("avg_et0_mm_day", 4.3)
     
     # 3. AI Crop Type Detection
     crop_info = ai_classifier.classify_crop(
@@ -66,16 +72,27 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
     growth_stage = health_and_stage["growth_stage"]
     est_harvest = health_and_stage["estimated_harvest"]
     
-    # 6. APMC Mandi Market & Revenue Projection
-    market_data = mandi_service.get_market_data(crop_name, est_harvest, req.district or "Jabalpur")
+    # 6. APMC Mandi Market & Net Profit Projection
+    market_data = mandi_service.get_market_data(crop_name, est_harvest, req.district or "Jabalpur", area)
     
     # 7. Precision Fertilizer Plan
     fertilizer_plan = fertilizer_calculator.calculate_dosage(crop_name, area, growth_stage)
+
+    # 8. Smart Irrigation Requirement & Pump Run Time
+    irrigation_plan = irrigation_service.calculate_irrigation(
+        crop_name=crop_name,
+        field_area_acres=area,
+        growth_stage=growth_stage,
+        et0_mm_day=avg_et0
+    )
+
+    # 9. Multi-temporal Historical Time-series passes
+    timeseries_data = timeseries_service.get_timeseries_data(req.latitude, req.longitude, ndvi)
     
-    # 8. Pest & Disease Risk Evaluation
+    # 10. Pest & Disease Risk Evaluation
     pest_diagnostics = pest_service.get_crop_diagnostics(crop_name, humidity_pct, temp_c)
     
-    # 9. Farmer Agronomy Advisory
+    # 11. Farmer Agronomy Advisory
     advisory = advisory_service.generate_advisory(
         crop_name=crop_name,
         health=health_and_stage["crop_health"],
@@ -124,11 +141,30 @@ def process_field_analysis(req: AnalyzeRequest, current_user: User = Depends(get
         },
         "market_revenue": market_data,
         "fertilizer_dosage": fertilizer_plan,
+        "irrigation_plan": irrigation_plan,
+        "satellite_timeseries": timeseries_data,
         "pest_diagnostics": pest_diagnostics,
         "farmer_advisory": advisory,
         "weather": weather_data,
         "field_id": req.field_id
     }
+
+@router.post("/leaf-scan")
+def scan_leaf_photo(
+    crop: str = Query("Wheat", description="Crop Name"),
+    sample_name: str = Query("leaf_sample.jpg", description="Sample Name")
+):
+    """Diagnoses leaf symptoms and pathogens via computer vision image diagnostic engine."""
+    return leaf_doctor_service.diagnose_leaf(crop, sample_name)
+
+@router.get("/timeseries")
+def get_field_timeseries(
+    lat: float = Query(23.1815, description="Latitude"),
+    lng: float = Query(79.9864, description="Longitude"),
+    ndvi: float = Query(0.72, description="Current NDVI")
+):
+    """Retrieves 6-pass historical Sentinel-2 vegetation trajectory curves."""
+    return timeseries_service.get_timeseries_data(lat, lng, ndvi)
 
 @router.post("/save", response_model=AnalysisOut, status_code=status.HTTP_201_CREATED)
 def save_analysis(req: AnalysisSaveRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

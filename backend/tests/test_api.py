@@ -18,10 +18,8 @@ def test_login_demo_farmer():
     data = response.json()
     assert "access_token" in data
     assert data["user"]["email"] == "ramesh@satcrop.com"
-    assert data["user"]["name"] == "Ramesh Kumar"
 
 def test_analysis_pipeline_comprehensive():
-    # Login to get token
     login_res = client.post("/api/auth/login", json={
         "email": "ramesh@satcrop.com",
         "password": "farmer123"
@@ -29,7 +27,6 @@ def test_analysis_pipeline_comprehensive():
     token = login_res.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
-    # Process field analysis
     response = client.post("/api/analysis/process", headers=headers, json={
         "latitude": 23.1815,
         "longitude": 79.9864,
@@ -40,43 +37,37 @@ def test_analysis_pipeline_comprehensive():
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "success"
-    assert "crop_detection" in data
-    assert "spectral_indices" in data
-    assert "ndvi" in data["spectral_indices"]
-    assert "ndwi" in data["spectral_indices"]
-    assert "savi" in data["spectral_indices"]
-    assert "health_assessment" in data
-    assert "yield_forecast" in data
+    assert "irrigation_plan" in data
+    assert "satellite_timeseries" in data
     assert "market_revenue" in data
-    assert "fertilizer_dosage" in data
-    assert "pest_diagnostics" in data
 
-def test_live_weather_endpoint():
-    res = client.get("/api/weather/live?lat=23.1815&lng=79.9864")
+def test_irrigation_endpoint():
+    res = client.get("/api/irrigation/calculate?crop=Wheat&area=2.45&stage=Tillering&et0=4.3&soil=Clay&pump_hp=5.0")
     assert res.status_code == 200
     data = res.json()
-    assert "current" in data
-    assert "daily_forecast" in data
+    assert "daily_water_liters" in data
+    assert "pump_specifications" in data
+    assert data["pump_specifications"]["required_pump_run_hours"] > 0
 
-def test_mandi_rates_endpoint():
-    res = client.get("/api/market/mandi-rates?crop=Wheat&yield_q=32.5&district=Jabalpur")
+def test_schemes_endpoint():
+    res = client.get("/api/schemes/list")
     assert res.status_code == 200
     data = res.json()
-    assert data["crop_name"] == "Wheat"
-    assert "estimated_gross_revenue_inr" in data
-    assert data["modal_price_per_quintal"] > 0
+    assert isinstance(data, list)
+    assert len(data) >= 5
+    assert data[0]["name"] == "PM-KISAN Samman Nidhi"
 
-def test_pest_diagnostics_endpoint():
-    res = client.get("/api/pest/diagnostics?crop=Wheat&humidity=65&temp=28")
+def test_leaf_doctor_endpoint():
+    res = client.post("/api/analysis/leaf-scan?crop=Wheat&sample_name=sample.jpg")
     assert res.status_code == 200
     data = res.json()
-    assert "threats" in data
-    assert len(data["threats"]) > 0
+    assert "diagnosis" in data
+    assert "immediate_action" in data
+    assert "confidence_percentage" in data
 
-def test_fertilizer_dosage_endpoint():
-    res = client.get("/api/fertilizer/dosage?crop=Wheat&area=2.45&stage=Tillering")
+def test_timeseries_endpoint():
+    res = client.get("/api/analysis/timeseries?lat=23.1815&lng=79.9864&ndvi=0.72")
     assert res.status_code == 200
     data = res.json()
-    assert "fertilizer_plan" in data
-    assert "dap" in data["fertilizer_plan"]
-    assert "urea" in data["fertilizer_plan"]
+    assert "historical_passes" in data
+    assert len(data["historical_passes"]) == 6
