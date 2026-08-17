@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { ThemeProvider } from './context/ThemeContext';
@@ -21,36 +21,68 @@ import { Analysis, Field } from './types';
 const MainApp: React.FC = () => {
   const { user, loading } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<string>('splash');
+  const [historyStack, setHistoryStack] = useState<string[]>(['splash']);
   
   // Transient state across analysis flow
   const [selectedLocation, setSelectedLocation] = useState<any>(null);
   const [currentAnalysisResult, setCurrentAnalysisResult] = useState<any>(null);
 
-  // If user is already logged in and currently on splash/login/register, default to dashboard
-  React.useEffect(() => {
+  // Default to dashboard when logged in
+  useEffect(() => {
     if (!loading && user && (currentScreen === 'splash' || currentScreen === 'login' || currentScreen === 'register')) {
       setCurrentScreen('dashboard');
+      setHistoryStack(['dashboard']);
     }
   }, [user, loading]);
 
+  // Navigate forward to a new screen and push onto history stack
   const handleNavigate = (screen: string) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
-    setCurrentScreen(screen);
+    if (screen !== currentScreen) {
+      setHistoryStack(prev => [...prev, screen]);
+      setCurrentScreen(screen);
+    }
   };
+
+  // Back button handler
+  const handleBack = () => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (historyStack.length > 1) {
+      const newStack = [...historyStack];
+      newStack.pop(); // remove current
+      const previousScreen = newStack[newStack.length - 1];
+      setHistoryStack(newStack);
+      setCurrentScreen(previousScreen);
+    } else {
+      setCurrentScreen('dashboard');
+      setHistoryStack(['dashboard']);
+    }
+  };
+
+  // Android Hardware Back Button listener
+  useEffect(() => {
+    const handlePopState = (e: PopStateEvent) => {
+      e.preventDefault();
+      handleBack();
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [historyStack]);
 
   const handleStartAnalysis = (locationData: any) => {
     setSelectedLocation(locationData);
-    setCurrentScreen('analyzing');
+    handleNavigate('analyzing');
   };
 
   const handleAnalysisComplete = (resultData: any) => {
     setCurrentAnalysisResult(resultData);
-    setCurrentScreen('result');
+    handleNavigate('result');
   };
 
   const handleSelectHistoryAnalysis = (analysis: Analysis) => {
     setCurrentAnalysisResult(analysis);
-    setCurrentScreen('result');
+    handleNavigate('result');
   };
 
   const handleAnalyzeSavedField = (field: Field) => {
@@ -63,7 +95,7 @@ const MainApp: React.FC = () => {
       fieldId: field.id,
       polygon: field.polygon_geojson ? JSON.parse(field.polygon_geojson) : undefined
     });
-    setCurrentScreen('analyzing');
+    handleNavigate('analyzing');
   };
 
   if (loading) {
@@ -78,13 +110,18 @@ const MainApp: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors">
+    <div className="min-h-screen flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 transition-colors w-full overflow-x-hidden">
       
-      {/* Top Navigation Bar */}
-      <Navbar currentScreen={currentScreen} onNavigate={handleNavigate} />
+      {/* Top Navigation Bar with Back button */}
+      <Navbar 
+        currentScreen={currentScreen} 
+        onNavigate={handleNavigate} 
+        onBack={handleBack}
+        canGoBack={historyStack.length > 1}
+      />
 
       {/* Main Content Area */}
-      <main className="flex-1">
+      <main className="flex-1 w-full max-w-full overflow-x-hidden">
         {currentScreen === 'splash' && (
           <SplashPage
             onGetStarted={() => handleNavigate(user ? 'dashboard' : 'login')}
@@ -116,7 +153,7 @@ const MainApp: React.FC = () => {
         {currentScreen === 'map' && (
           <MapSelectPage
             onStartAnalysis={handleStartAnalysis}
-            onCancel={() => handleNavigate('dashboard')}
+            onCancel={handleBack}
           />
         )}
 

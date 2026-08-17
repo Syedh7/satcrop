@@ -11,15 +11,17 @@ import {
   Calendar, 
   MapPin, 
   Sprout, 
-  Layers 
+  Layers,
+  ChevronLeft 
 } from 'lucide-react';
 
 interface HistoryPageProps {
   onSelectAnalysis: (analysis: Analysis) => void;
   onNavigateToMap: () => void;
+  onBack?: () => void;
 }
 
-export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNavigateToMap }) => {
+export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNavigateToMap, onBack }) => {
   const { t } = useLanguage();
   const [historyList, setHistoryList] = useState<Analysis[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
@@ -37,7 +39,6 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
       setHistoryList(res.data);
     } catch (err) {
       console.warn('History fetch fallback:', err);
-      // Fallback sample data matching reference design
       setHistoryList([
         {
           id: 'an-001',
@@ -78,46 +79,6 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
           source: 'DEMO_AI',
           analysis_date: '2026-05-05T10:00:00Z',
           created_at: '2026-05-05T10:00:00Z'
-        },
-        {
-          id: 'an-003',
-          user_id: 'user-01',
-          crop_name: 'Maize',
-          crop_health: 'Poor',
-          growth_stage: 'Tasseling Stage',
-          ndvi: 0.38,
-          district: 'Jabalpur',
-          state: 'Madhya Pradesh',
-          latitude: 23.2100,
-          longitude: 80.0120,
-          field_area: 1.80,
-          estimated_harvest: 14.2,
-          harvest_unit: 'Quintal',
-          confidence_score: 0.89,
-          health_explanation: 'Significant moisture stress and nitrogen deficiency observed.',
-          source: 'DEMO_AI',
-          analysis_date: '2026-04-28T10:00:00Z',
-          created_at: '2026-04-28T10:00:00Z'
-        },
-        {
-          id: 'an-004',
-          user_id: 'user-01',
-          crop_name: 'Wheat',
-          crop_health: 'Healthy',
-          growth_stage: 'Crown Root Stage',
-          ndvi: 0.68,
-          district: 'Jabalpur',
-          state: 'Madhya Pradesh',
-          latitude: 23.1815,
-          longitude: 79.9864,
-          field_area: 2.45,
-          estimated_harvest: 30.0,
-          harvest_unit: 'Quintal',
-          confidence_score: 0.94,
-          health_explanation: 'Initial root initiation is strong and uniform.',
-          source: 'DEMO_AI',
-          analysis_date: '2026-04-20T10:00:00Z',
-          created_at: '2026-04-20T10:00:00Z'
         }
       ]);
     } finally {
@@ -148,17 +109,29 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
   });
 
   return (
-    <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5 pb-24 md:pb-12">
+    <div className="max-w-4xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 pb-24 md:pb-12">
       
-      {/* Header */}
+      {/* Header with Back Button */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
-            Analysis History
-          </h1>
-          <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
-            Review past satellite scans, NDVI timelines, and yield records
-          </p>
+        <div className="flex items-start space-x-3">
+          {onBack && (
+            <button
+              onClick={onBack}
+              className="mt-1 p-2 rounded-xl bg-white dark:bg-slate-900 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 shadow-sm transition-all active:scale-95 sm:hidden"
+              title="Go Back"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+          )}
+
+          <div>
+            <h1 className="text-xl sm:text-3xl font-black text-slate-900 dark:text-white tracking-tight">
+              Analysis History
+            </h1>
+            <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400">
+              Review past satellite scans, NDVI timelines, and yield records
+            </p>
+          </div>
         </div>
 
         <button
@@ -201,7 +174,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
         </div>
       </div>
 
-      {/* History Cards List (Matching Reference Screen Flow) */}
+      {/* History Cards List */}
       {loading ? (
         <div className="text-center py-12">
           <div className="w-8 h-8 border-3 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -234,22 +207,20 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
                 className="bg-white dark:bg-slate-900 rounded-2xl p-4 sm:p-5 border border-slate-200 dark:border-slate-800 hover:border-brand-500 dark:hover:border-brand-500 shadow-sm hover:shadow-md cursor-pointer transition-all flex items-center justify-between gap-4 group"
               >
                 {/* Left Preview Thumbnail & Info */}
-                <div className="flex items-center space-x-4">
-                  {/* Satellite Thumbnail / Crop Icon */}
-                  <div className="relative w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-800 to-slate-900 flex items-center justify-center text-3xl shadow-inner shrink-0 overflow-hidden border border-emerald-500/30">
+                <div className="flex items-center space-x-3.5 sm:space-x-4">
+                  <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-emerald-800 to-slate-900 flex items-center justify-center text-2xl sm:text-3xl shadow-inner shrink-0 overflow-hidden border border-emerald-500/30">
                     <span className="relative z-10">
                       {item.crop_name === 'Wheat' ? '🌾' : (item.crop_name === 'Soybean' ? '🫘' : (item.crop_name === 'Maize' ? '🌽' : '🌱'))}
                     </span>
-                    {/* Simulated raster scanline overlay */}
                     <div className="absolute inset-0 bg-emerald-500/10 pointer-events-none" />
                   </div>
 
                   <div>
                     <div className="flex items-center space-x-2">
-                      <h3 className="text-base font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
+                      <h3 className="text-sm sm:text-base font-extrabold text-slate-900 dark:text-white group-hover:text-brand-600 transition-colors">
                         {item.crop_name}
                       </h3>
-                      <span className={`text-[10px] font-extrabold px-2.5 py-0.5 rounded-full ${
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${
                         isHealthy
                           ? 'bg-emerald-100 dark:bg-emerald-950 text-emerald-800 dark:text-emerald-300'
                           : isModerate
@@ -260,7 +231,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
                       <span>{item.growth_stage}</span>
                       <span>•</span>
                       <span>{item.district}</span>
@@ -268,7 +239,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
                       <span className="font-mono text-emerald-600 dark:text-emerald-400 font-semibold">{item.field_area} Acres</span>
                     </div>
 
-                    <div className="text-[11px] text-slate-400 mt-1 flex items-center space-x-2 font-mono">
+                    <div className="text-[10px] sm:text-[11px] text-slate-400 mt-1 flex items-center space-x-2 font-mono">
                       <span>NDVI: {item.ndvi.toFixed(2)}</span>
                       <span>•</span>
                       <span>{new Date(item.analysis_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
@@ -277,7 +248,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
                 </div>
 
                 {/* Right Action & Harvest Tag */}
-                <div className="flex items-center space-x-3 shrink-0">
+                <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
                   <div className="text-right hidden sm:block">
                     <span className="text-sm font-black text-slate-900 dark:text-white block font-mono">
                       {item.estimated_harvest} Q
@@ -293,7 +264,7 @@ export const HistoryPage: React.FC<HistoryPageProps> = ({ onSelectAnalysis, onNa
                     <Trash2 className="w-4 h-4" />
                   </button>
 
-                  <div className="w-8 h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center text-slate-400 group-hover:bg-brand-50 group-hover:text-brand-600 transition-colors">
                     <ChevronRight className="w-4 h-4" />
                   </div>
                 </div>
