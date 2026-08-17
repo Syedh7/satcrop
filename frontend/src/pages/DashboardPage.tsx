@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { HealthDonutChart } from '../components/HealthDonutChart';
@@ -6,16 +6,18 @@ import { LeafDoctorModal } from '../components/LeafDoctorModal';
 import { KrishiSchemesModal } from '../components/KrishiSchemesModal';
 import { api } from '../services/api';
 import { DashboardStats, Analysis } from '../types';
-import { 
-  Sprout, 
-  MapPin, 
-  CloudSun, 
-  ChevronRight, 
-  PlusCircle, 
-  History, 
-  Map, 
-  TrendingUp, 
-  Activity, 
+import { liveGeolocationService, getAccuracyLabel } from '../services/liveGeolocationService';
+import { computeAgroAlerts, getAlertStyles, AgroAlert } from '../services/realtimeAlertService';
+import {
+  Sprout,
+  MapPin,
+  CloudSun,
+  ChevronRight,
+  PlusCircle,
+  History,
+  Map,
+  TrendingUp,
+  Activity,
   Calendar,
   Sparkles,
   Layers,
@@ -26,7 +28,12 @@ import {
   Calculator,
   Stethoscope,
   Landmark,
-  Waves
+  Waves,
+  Navigation,
+  X,
+  RefreshCw,
+  Loader2,
+  Zap,
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -34,129 +41,266 @@ interface DashboardPageProps {
   onSelectAnalysis: (analysis: Analysis) => void;
 }
 
+// ─── Dismissible Alert Banner ─────────────────────────────────────────────────
+
+const AlertBanner: React.FC<{
+  alert: AgroAlert;
+  onDismiss: (id: string) => void;
+}> = ({ alert, onDismiss }) => {
+  const styles = getAlertStyles(alert.severity);
+  return (
+    <div className={`rounded-2xl border p-3.5 flex items-start gap-3 ${styles.bg} ${styles.border}`}>
+      <span className="text-xl shrink-0 mt-0.5">{alert.icon}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`text-xs font-black ${styles.title}`}>{alert.title}</span>
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${styles.badge}`}>
+            {alert.severity}
+          </span>
+        </div>
+        <p className={`text-[11px] mt-0.5 font-medium ${styles.text}`}>{alert.message}</p>
+        <p className={`text-[11px] mt-1 font-bold ${styles.action} flex items-center gap-1`}>
+          <span>›</span> {alert.action}
+        </p>
+      </div>
+      {alert.dismissible && (
+        <button
+          onClick={() => onDismiss(alert.id)}
+          className="shrink-0 p-1 rounded-lg hover:bg-black/10 transition-colors"
+          aria-label="Dismiss alert"
+        >
+          <X className="w-3.5 h-3.5 text-slate-500" />
+        </button>
+      )}
+    </div>
+  );
+};
+
+// ─── Main Dashboard ───────────────────────────────────────────────────────────
+
 export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSelectAnalysis }) => {
   const { user } = useAuth();
   const { t } = useLanguage();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  const [weatherFetchedAt, setWeatherFetchedAt] = useState<Date | null>(null);
+
+  // GPS State
+  const [gpsLocating, setGpsLocating] = useState(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [currentLat, setCurrentLat] = useState(23.1815);
+  const [currentLng, setCurrentLng] = useState(79.9864);
+  const [currentDistrict, setCurrentDistrict] = useState(user?.district || 'Jabalpur');
+  const [currentState, setCurrentState] = useState(user?.state || 'Madhya Pradesh');
+  const [gpsError, setGpsError] = useState<string | null>(null);
+
+  // Alert State
+  const [alerts, setAlerts] = useState<AgroAlert[]>([]);
+  const [dismissedAlertIds, setDismissedAlertIds] = useState<Set<string>>(new Set());
 
   // Modals state
   const [showLeafDoctor, setShowLeafDoctor] = useState<boolean>(false);
   const [showSchemes, setShowSchemes] = useState<boolean>(false);
 
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      const lat = 23.1815;
-      const lng = 79.9864;
-      let liveWeather = {
-        temp: 28.5,
-        condition: 'Clear Sky ☀️',
-        humidity: 58,
-        rain_probability: 10,
-        wind_speed: '8 km/h'
-      };
+  // Interval ref for auto-refresh
+  const refreshIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-      try {
-        const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m&daily=precipitation_probability_max&timezone=auto`);
-        if (weatherRes.ok) {
-          const wData = await weatherRes.json();
-          const tVal = wData.current?.temperature_2m ?? 28.5;
-          const hVal = wData.current?.relative_humidity_2m ?? 58;
-          const wCode = wData.current?.weather_code ?? 0;
-          const rProb = wData.daily?.precipitation_probability_max?.[0] ?? 10;
-          const wSpd = wData.current?.wind_speed_10m ? `${Math.round(wData.current.wind_speed_10m)} km/h` : '8 km/h';
+  // ─── Live Weather Fetch ────────────────────────────────────────────────────
 
-          let cond = 'Clear Sky ☀️';
-          if (wCode >= 1 && wCode <= 3) cond = 'Partly Cloudy ⛅';
-          else if (wCode >= 51 && wCode <= 67) cond = 'Light Rain 🌦️';
-          else if (wCode >= 80) cond = 'Rain Showers 🌧️';
-
-          liveWeather = {
-            temp: Number(tVal.toFixed(1)),
-            condition: cond,
-            humidity: Math.round(hVal),
-            rain_probability: Math.round(rProb),
-            wind_speed: wSpd
-          };
-        }
-      } catch (e) {
-        console.warn('Dashboard live weather fetch error:', e);
-      }
-
-      try {
-        const res = await api.get('/dashboard/stats');
-        setStats({
-          ...res.data,
-          weather: liveWeather
-        });
-      } catch (err) {
-        console.warn('Dashboard fallback triggered:', err);
-        setStats({
-          total_fields: 3,
-          total_acreage: 8.45,
-          healthy_percent: 65,
-          moderate_percent: 25,
-          poor_percent: 10,
-          healthy_count: 2,
-          moderate_count: 1,
-          poor_count: 0,
-          recent_analyses: [
-            {
-              id: 'an-001',
-              user_id: 'user-01',
-              crop_name: 'Wheat',
-              crop_health: 'Healthy',
-              growth_stage: 'Tillering Stage',
-              ndvi: 0.72,
-              district: 'Jabalpur',
-              state: 'Madhya Pradesh',
-              latitude: 23.1815,
-              longitude: 79.9864,
-              field_area: 2.45,
-              estimated_harvest: 32.5,
-              harvest_unit: 'Quintal',
-              confidence_score: 0.96,
-              health_explanation: 'The vegetation appears healthy based on current Sentinel-2 analysis.',
-              source: 'Sentinel-2 BOA',
-              analysis_date: new Date().toISOString(),
-              created_at: new Date().toISOString()
-            },
-            {
-              id: 'an-002',
-              user_id: 'user-01',
-              crop_name: 'Soybean',
-              crop_health: 'Moderate',
-              growth_stage: 'Pod Development (R3-R4)',
-              ndvi: 0.54,
-              district: 'Jabalpur',
-              state: 'Madhya Pradesh',
-              latitude: 23.1650,
-              longitude: 79.9520,
-              field_area: 4.20,
-              estimated_harvest: 38.6,
-              harvest_unit: 'Quintal',
-              confidence_score: 0.92,
-              health_explanation: 'Mild moisture deficit detected in western quadrant.',
-              source: 'Sentinel-2 BOA',
-              analysis_date: new Date(Date.now() - 86400000 * 5).toISOString(),
-              created_at: new Date(Date.now() - 86400000 * 5).toISOString()
-            }
-          ],
-          current_location: {
-            district: user?.district || 'Jabalpur',
-            state: user?.state || 'Madhya Pradesh',
-            latitude: 23.1815,
-            longitude: 79.9864
-          },
-          weather: liveWeather
-        });
-      } finally {
-        setLoading(false);
-      }
+  const fetchLiveWeather = useCallback(async (lat: number, lng: number) => {
+    setWeatherLoading(true);
+    let liveWeather = {
+      temp: 28.5,
+      condition: 'Clear Sky ☀️',
+      humidity: 58,
+      rain_probability: 10,
+      wind_speed: '8 km/h',
+      wind_gusts_kmh: 12,
+      soil_moisture_0_7cm: 28.0,
+      solar_radiation_wm2: 320,
     };
 
+    try {
+      const weatherRes = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}` +
+        `&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,` +
+        `wind_gusts_10m,cloud_cover,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,` +
+        `soil_temperature_0_to_7cm,dew_point_2m,shortwave_radiation,precipitation` +
+        `&daily=precipitation_probability_max,et0_fao_evapotranspiration&timezone=auto`
+      );
+
+      if (weatherRes.ok) {
+        const wData = await weatherRes.json();
+        const tVal   = wData.current?.temperature_2m ?? 28.5;
+        const hVal   = wData.current?.relative_humidity_2m ?? 58;
+        const wCode  = wData.current?.weather_code ?? 0;
+        const rProb  = wData.daily?.precipitation_probability_max?.[0] ?? 10;
+        const wSpd   = wData.current?.wind_speed_10m ?? 8;
+        const gusts  = wData.current?.wind_gusts_10m ?? wSpd * 1.4;
+        const sm07   = wData.current?.soil_moisture_0_to_7cm
+          ? wData.current.soil_moisture_0_to_7cm * 100 : 28.0;
+        const sm728  = wData.current?.soil_moisture_7_to_28cm
+          ? wData.current.soil_moisture_7_to_28cm * 100 : 34.0;
+        const soilT  = wData.current?.soil_temperature_0_to_7cm ?? (tVal - 2.5);
+        const dew    = wData.current?.dew_point_2m ?? (tVal - 8);
+        const solar  = wData.current?.shortwave_radiation ?? 350;
+        const rainNow = wData.current?.precipitation ?? 0;
+        const et0    = wData.daily?.et0_fao_evapotranspiration?.[0] ?? 4.2;
+
+        let cond = 'Clear Sky ☀️';
+        if (wCode >= 1 && wCode <= 3) cond = 'Partly Cloudy ⛅';
+        else if (wCode >= 51 && wCode <= 67) cond = 'Light Rain 🌦️';
+        else if (wCode >= 80) cond = 'Rain Showers 🌧️';
+        else if (wCode >= 95) cond = 'Thunderstorm ⛈️';
+
+        liveWeather = {
+          temp: Number(tVal.toFixed(1)),
+          condition: cond,
+          humidity: Math.round(hVal),
+          rain_probability: Math.round(rProb),
+          wind_speed: `${Math.round(wSpd)} km/h`,
+          wind_gusts_kmh: Math.round(gusts),
+          soil_moisture_0_7cm: Number(sm07.toFixed(1)),
+          solar_radiation_wm2: Math.round(solar),
+        } as any;
+
+        // Compute real-time agro alerts from live telemetry
+        const freshAlerts = computeAgroAlerts({
+          temperature_c: Number(tVal.toFixed(1)),
+          humidity_pct: Math.round(hVal),
+          wind_speed_kmh: Math.round(wSpd),
+          wind_gusts_kmh: Math.round(gusts),
+          rain_current_mm: rainNow,
+          cloud_cover_pct: wData.current?.cloud_cover ?? 20,
+          soil_moisture_topsoil_pct: Number(sm07.toFixed(1)),
+          soil_moisture_subsoil_pct: Number(sm728.toFixed(1)),
+          soil_temp_c: Number(soilT.toFixed(1)),
+          rain_probability_24h: Math.round(rProb),
+          et0_mm_day: et0,
+          solar_radiation_wm2: Math.round(solar),
+          dew_point_c: Number(dew.toFixed(1)),
+        });
+
+        setAlerts(freshAlerts);
+      }
+    } catch (e) {
+      console.warn('Dashboard live weather fetch error:', e);
+    } finally {
+      setWeatherLoading(false);
+      setWeatherFetchedAt(new Date());
+    }
+
+    return liveWeather;
+  }, []);
+
+  // ─── Dashboard Data Fetch ──────────────────────────────────────────────────
+
+  const fetchDashboardData = useCallback(async (lat = currentLat, lng = currentLng) => {
+    const liveWeather = await fetchLiveWeather(lat, lng);
+
+    try {
+      const res = await api.get('/dashboard/stats');
+      setStats({ ...res.data, weather: liveWeather });
+    } catch (err) {
+      console.warn('Dashboard fallback triggered:', err);
+      setStats({
+        total_fields: 3,
+        total_acreage: 8.45,
+        healthy_percent: 65,
+        moderate_percent: 25,
+        poor_percent: 10,
+        healthy_count: 2,
+        moderate_count: 1,
+        poor_count: 0,
+        recent_analyses: [
+          {
+            id: 'an-001', user_id: 'user-01',
+            crop_name: 'Wheat', crop_health: 'Healthy', growth_stage: 'Tillering Stage',
+            ndvi: 0.72, district: currentDistrict, state: currentState,
+            latitude: lat, longitude: lng, field_area: 2.45, estimated_harvest: 32.5,
+            harvest_unit: 'Quintal', confidence_score: 0.96,
+            health_explanation: 'The vegetation appears healthy based on current Sentinel-2 analysis.',
+            source: 'Sentinel-2 BOA',
+            analysis_date: new Date().toISOString(), created_at: new Date().toISOString(),
+          },
+          {
+            id: 'an-002', user_id: 'user-01',
+            crop_name: 'Soybean', crop_health: 'Moderate', growth_stage: 'Pod Development (R3-R4)',
+            ndvi: 0.54, district: currentDistrict, state: currentState,
+            latitude: lat + 0.015, longitude: lng - 0.03, field_area: 4.20, estimated_harvest: 38.6,
+            harvest_unit: 'Quintal', confidence_score: 0.92,
+            health_explanation: 'Mild moisture deficit detected in western quadrant.',
+            source: 'Sentinel-2 BOA',
+            analysis_date: new Date(Date.now() - 86400000 * 5).toISOString(),
+            created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+          },
+        ],
+        current_location: {
+          district: currentDistrict, state: currentState, latitude: lat, longitude: lng,
+        },
+        weather: liveWeather,
+      } as any);
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchLiveWeather, currentLat, currentLng, currentDistrict, currentState]);
+
+  // ─── Initial Load ──────────────────────────────────────────────────────────
+
+  useEffect(() => {
     fetchDashboardData();
-  }, [user]);
+
+    // 60-second auto-refresh heartbeat
+    refreshIntervalRef.current = setInterval(() => {
+      fetchLiveWeather(currentLat, currentLng).then((liveWeather) => {
+        setStats(prev => prev ? { ...prev, weather: liveWeather } : prev);
+      });
+    }, 60_000);
+
+    return () => {
+      if (refreshIntervalRef.current) clearInterval(refreshIntervalRef.current);
+    };
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ─── GPS: Locate My Field ──────────────────────────────────────────────────
+
+  const handleLocateMe = async () => {
+    setGpsLocating(true);
+    setGpsError(null);
+    try {
+      const pos = await liveGeolocationService.getCurrentPosition(true);
+      setGpsAccuracy(pos.accuracy);
+      setCurrentLat(pos.lat);
+      setCurrentLng(pos.lng);
+
+      const geo = await liveGeolocationService.reverseGeocode(pos.lat, pos.lng);
+      setCurrentDistrict(geo.district);
+      setCurrentState(geo.state);
+
+      // Refresh all data for the new GPS location
+      await fetchDashboardData(pos.lat, pos.lng);
+    } catch (err: any) {
+      setGpsError(err.message || 'Location unavailable');
+    } finally {
+      setGpsLocating(false);
+    }
+  };
+
+  // ─── Manual Weather Refresh ────────────────────────────────────────────────
+
+  const handleWeatherRefresh = async () => {
+    const liveWeather = await fetchLiveWeather(currentLat, currentLng);
+    setStats(prev => prev ? { ...prev, weather: liveWeather } : prev);
+  };
+
+  // ─── Alert Dismiss ─────────────────────────────────────────────────────────
+
+  const handleDismissAlert = (id: string) => {
+    setDismissedAlertIds(prev => new Set([...prev, id]));
+  };
+
+  const visibleAlerts = alerts.filter(a => !dismissedAlertIds.has(a.id));
 
   const getGreetingTime = () => {
     const hour = new Date().getHours();
@@ -165,13 +309,40 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
     return 'Good Evening';
   };
 
+  // ─── Live Weather Freshness Label ─────────────────────────────────────────
+
+  const [weatherAgoLabel, setWeatherAgoLabel] = useState('');
+  useEffect(() => {
+    const update = () => {
+      if (!weatherFetchedAt) { setWeatherAgoLabel(''); return; }
+      const diff = Math.floor((Date.now() - weatherFetchedAt.getTime()) / 1000);
+      if (diff < 5)  setWeatherAgoLabel('Live • Just now');
+      else if (diff < 60) setWeatherAgoLabel(`Live • ${diff}s ago`);
+      else setWeatherAgoLabel(`Live • ${Math.floor(diff / 60)} min ago`);
+    };
+    update();
+    const iv = setInterval(update, 5000);
+    return () => clearInterval(iv);
+  }, [weatherFetchedAt]);
+
+  const accuracyInfo = gpsAccuracy ? getAccuracyLabel(gpsAccuracy) : null;
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6 pb-24 md:pb-12">
-      
-      {/* Top Greeting & Location Card */}
+
+      {/* ── Real-Time Agricultural Alert Banners ── */}
+      {visibleAlerts.length > 0 && (
+        <div className="space-y-2">
+          {visibleAlerts.map(alert => (
+            <AlertBanner key={alert.id} alert={alert} onDismiss={handleDismissAlert} />
+          ))}
+        </div>
+      )}
+
+      {/* ── Top Greeting & Location Card ── */}
       <div className="bg-gradient-to-r from-brand-700 via-brand-600 to-emerald-600 rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-6 relative overflow-hidden">
-        
-        {/* Background Subtle Radar Effect */}
+
+        {/* Background Radar Effect */}
         <div className="absolute right-[-40px] top-[-40px] w-64 h-64 border-4 border-white/10 rounded-full pointer-events-none" />
         <div className="absolute right-[-10px] top-[-10px] w-48 h-48 border-2 border-white/10 rounded-full pointer-events-none" />
 
@@ -180,7 +351,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             <Sparkles className="w-3.5 h-3.5 text-amber-300" />
             <span>AI Satellite Crop Intelligence</span>
           </div>
-          
+
           <h1 className="text-2xl sm:text-3xl font-black tracking-tight">
             Hello, {user?.name ? user.name.split(' ')[0] : 'Farmer'} 👋
           </h1>
@@ -188,37 +359,85 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             {getGreetingTime()} • Welcome to your agricultural intelligence dashboard
           </p>
 
-          <div className="inline-flex items-center space-x-2 pt-2 text-xs font-semibold bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
-            <MapPin className="w-4 h-4 text-emerald-300 shrink-0" />
-            <span>
-              {stats?.current_location?.district || 'Jabalpur'}, {stats?.current_location?.state || 'Madhya Pradesh'}
-            </span>
+          {/* Location Row with GPS Button */}
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <div className="inline-flex items-center space-x-2 text-xs font-semibold bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
+              <MapPin className="w-4 h-4 text-emerald-300 shrink-0" />
+              <span>{currentDistrict}, {currentState}</span>
+            </div>
+
+            {/* GPS Locate Button */}
+            <button
+              onClick={handleLocateMe}
+              disabled={gpsLocating}
+              className={`inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl transition-all ${
+                gpsLocating
+                  ? 'bg-white/10 text-white/60 cursor-wait'
+                  : 'bg-white/20 hover:bg-white/30 text-white backdrop-blur-md'
+              }`}
+            >
+              {gpsLocating
+                ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                : <Navigation className="w-3.5 h-3.5" />}
+              <span>{gpsLocating ? 'Locating...' : 'Locate My Farm'}</span>
+            </button>
+
+            {/* GPS Accuracy Badge */}
+            {accuracyInfo && !gpsLocating && (
+              <span className={`text-[10px] font-bold px-2 py-1 rounded-lg bg-black/20 ${accuracyInfo.color.replace('text-', 'text-')}`}>
+                📡 {accuracyInfo.label} ±{Math.round(gpsAccuracy!)}m
+              </span>
+            )}
           </div>
+
+          {/* GPS Error */}
+          {gpsError && (
+            <p className="text-[11px] text-red-300 bg-red-500/20 px-3 py-1.5 rounded-xl font-medium">
+              ⚠️ {gpsError}
+            </p>
+          )}
         </div>
 
         {/* Live Weather Widget */}
-        <div className="relative z-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 flex items-center space-x-4 self-start md:self-auto">
-          <div className="p-2.5 rounded-xl bg-white/20">
-            <CloudSun className="w-8 h-8 text-amber-300" />
+        <div className="relative z-10 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 flex flex-col gap-2 self-start md:self-auto min-w-[170px]">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-white/20">
+              <CloudSun className="w-8 h-8 text-amber-300" />
+            </div>
+            <div>
+              <div className="text-2xl font-black font-mono">
+                {(stats?.weather as any)?.temp || 28.5}°C
+              </div>
+              <div className="text-xs font-semibold text-emerald-100">
+                {(stats?.weather as any)?.condition || 'Clear Sky ☀️'}
+              </div>
+              <div className="text-[10px] text-emerald-200 mt-0.5">
+                Humidity: {(stats?.weather as any)?.humidity || 58}% • Rain: {(stats?.weather as any)?.rain_probability || 10}%
+              </div>
+            </div>
           </div>
-          <div>
-            <div className="text-2xl font-black font-mono">
-              {stats?.weather?.temp || 28.5}°C
-            </div>
-            <div className="text-xs font-semibold text-emerald-100">
-              {stats?.weather?.condition || 'Clear Sky ☀️'}
-            </div>
-            <div className="text-[10px] text-emerald-200 mt-0.5">
-              Humidity: {stats?.weather?.humidity || 58}% • Rain: {stats?.weather?.rain_probability || 10}%
-            </div>
+
+          {/* Live badge + refresh */}
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-300">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse inline-block" />
+              {weatherAgoLabel || 'LIVE'}
+            </span>
+            <button
+              onClick={handleWeatherRefresh}
+              disabled={weatherLoading}
+              className="p-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+              title="Refresh weather"
+            >
+              <RefreshCw className={`w-3 h-3 text-white/70 ${weatherLoading ? 'animate-spin' : ''}`} />
+            </button>
           </div>
         </div>
-
       </div>
 
-      {/* Main Action CTAs */}
+      {/* ── Main Action CTAs ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        
+
         {/* Analyze Field CTA */}
         <button
           onClick={() => onNavigate('map')}
@@ -249,7 +468,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
           </div>
         </button>
 
-        {/* Krishi Schemes & Subsidies CTA */}
+        {/* Krishi Schemes CTA */}
         <button
           onClick={() => setShowSchemes(true)}
           className="bg-gradient-to-tr from-indigo-700 to-blue-600 hover:from-indigo-800 hover:to-blue-700 active:scale-95 text-white p-5 rounded-2xl shadow-lg shadow-indigo-700/20 flex items-center justify-between group transition-all text-left"
@@ -283,9 +502,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
 
       </div>
 
-      {/* Metrics Row: Acreage & Health Distribution Donut */}
+      {/* ── Metrics Row ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
+
         {/* Health Distribution Donut */}
         <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
@@ -295,7 +514,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             </h2>
             <span className="text-xs text-slate-400 font-medium">All Fields</span>
           </div>
-
           <HealthDonutChart
             healthy={stats?.healthy_percent || 65}
             moderate={stats?.moderate_percent || 25}
@@ -305,7 +523,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
 
         {/* Summary Metric Cards */}
         <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-          
+
           <div className="bg-white dark:bg-slate-900 p-6 rounded-3xl border border-slate-200 dark:border-slate-800 shadow-sm flex flex-col justify-between">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Farmland</span>
@@ -344,12 +562,11 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
           </div>
 
         </div>
-
       </div>
 
-      {/* Recent Analyses List */}
+      {/* ── Recent Analyses List ── */}
       <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 border border-slate-200 dark:border-slate-800 shadow-sm space-y-4">
-        
+
         <div className="flex items-center justify-between border-b border-slate-100 dark:border-slate-800 pb-4">
           <div>
             <h2 className="text-lg font-black text-slate-900 dark:text-white">
@@ -359,7 +576,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
               Latest Sentinel-2 multispectral scans & yield projections
             </p>
           </div>
-
           <button
             onClick={() => onNavigate('history')}
             className="text-xs font-bold text-brand-600 hover:text-brand-700 flex items-center space-x-1"
@@ -422,18 +638,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
 
       </div>
 
-      {/* AI Leaf Doctor Modal */}
-      <LeafDoctorModal
-        cropName="Wheat"
-        isOpen={showLeafDoctor}
-        onClose={() => setShowLeafDoctor(false)}
-      />
-
-      {/* Krishi Schemes Modal */}
-      <KrishiSchemesModal
-        isOpen={showSchemes}
-        onClose={() => setShowSchemes(false)}
-      />
+      {/* Modals */}
+      <LeafDoctorModal cropName="Wheat" isOpen={showLeafDoctor} onClose={() => setShowLeafDoctor(false)} />
+      <KrishiSchemesModal isOpen={showSchemes} onClose={() => setShowSchemes(false)} />
 
     </div>
   );

@@ -4,6 +4,12 @@
  * evaluates real-time FAO-56 Penman-Monteith evapotranspiration,
  * calculates multi-spectral Sentinel-2 vegetation indices,
  * and retrieves official APMC Mandi commodity market benchmarks.
+ *
+ * v2.0 — Real-Time Suite:
+ *  • 60-second auto-refresh polling heartbeat
+ *  • Expanded Open-Meteo: solar radiation, wind gusts, dew point, hourly ET₀
+ *  • Live timestamp formatting ("Updated Xs ago")
+ *  • Subscription-style listener API for reactive UI updates
  */
 
 export interface LocationCoordinates {
@@ -26,7 +32,7 @@ export const fetchRealtimeAgroAnalysis = async (loc: LocationCoordinates) => {
   let liveWeatherData: any = null;
 
   try {
-    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration&timezone=auto`;
+    const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lng}&current=temperature_2m,relative_humidity_2m,apparent_temperature,precipitation,weather_code,wind_speed_10m,wind_gusts_10m,cloud_cover,soil_temperature_0_to_7cm,soil_moisture_0_to_7cm,soil_moisture_7_to_28cm,dew_point_2m,shortwave_radiation&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,et0_fao_evapotranspiration&timezone=auto`;
     const response = await fetch(weatherUrl);
     if (response.ok) {
       liveWeatherData = await response.json();
@@ -42,6 +48,11 @@ export const fetchRealtimeAgroAnalysis = async (loc: LocationCoordinates) => {
   const soilMoisture7_28 = liveWeatherData?.current?.soil_moisture_7_to_28cm ? (liveWeatherData.current.soil_moisture_7_to_28cm * 100) : 41.2;
   const soilTemp = liveWeatherData?.current?.soil_temperature_0_to_7cm ?? (currentTemp - 2.5);
   const weatherCode = liveWeatherData?.current?.weather_code ?? 0;
+  const windSpeed = liveWeatherData?.current?.wind_speed_10m ?? 8.5;
+  const windGusts = liveWeatherData?.current?.wind_gusts_10m ?? (windSpeed * 1.4);
+  const dewPoint = liveWeatherData?.current?.dew_point_2m ?? (currentTemp - 8);
+  const solarRadiation = liveWeatherData?.current?.shortwave_radiation ?? 350;
+  const cloudCover = liveWeatherData?.current?.cloud_cover ?? 20;
   const rainChance = liveWeatherData?.daily?.precipitation_probability_max?.[0] ?? 10.0;
   const dailyEt0 = liveWeatherData?.daily?.et0_fao_evapotranspiration?.[0] ?? 4.2;
 
@@ -257,11 +268,17 @@ export const fetchRealtimeAgroAnalysis = async (loc: LocationCoordinates) => {
       condition: weatherCondition,
       humidity: Math.round(currentHumidity),
       rain_chance: Math.round(rainChance),
-      wind_speed_kmh: liveWeatherData?.current?.wind_speed_10m ?? 8.5,
+      wind_speed_kmh: Number(windSpeed.toFixed(1)),
+      wind_gusts_kmh: Number(windGusts.toFixed(1)),
+      dew_point_c: Number(dewPoint.toFixed(1)),
+      solar_radiation_wm2: Math.round(solarRadiation),
+      cloud_cover_pct: Math.round(cloudCover),
       soil_moisture_0_7cm: Number(soilMoisture0_7.toFixed(1)),
       soil_moisture_7_28cm: Number(soilMoisture7_28.toFixed(1)),
       soil_temperature_c: Number(soilTemp.toFixed(1)),
-      weekly_forecast: weeklyForecast
+      weekly_forecast: weeklyForecast,
+      live_fetched_at: now.toISOString(),
+      data_source: liveWeatherData ? 'Open-Meteo Live API' : 'Agro-Climatology Fallback'
     },
     farmer_advisory: {
       advisory_irrigation: `Soil moisture is ${soilMoisture0_7.toFixed(1)}%. Maintain light irrigation every ${soilMoisture0_7 > 30 ? '7-9' : '3-4'} days.`,
@@ -270,3 +287,72 @@ export const fetchRealtimeAgroAnalysis = async (loc: LocationCoordinates) => {
     }
   };
 };
+
+// ─── Live Polling Heartbeat (60-Second Auto-Refresh) ──────────────────────────
+
+type AgroDataListener = (data: any) => void;
+
+let pollingInterval: ReturnType<typeof setInterval> | null = null;
+let currentPollingLocation: LocationCoordinates | null = null;
+const agroListeners = new Set<AgroDataListener>();
+
+/**
+ * Start live 60-second polling heartbeat for a given field location.
+ * All registered listeners are called with fresh agro data on each tick.
+ */
+export function startLiveAgroPolling(loc: LocationCoordinates): void {
+  currentPollingLocation = loc;
+
+  // Immediate first fetch
+  fetchRealtimeAgroAnalysis(loc).then(data => {
+    agroListeners.forEach(cb => cb(data));
+  }).catch(err => console.warn('[AgroPolling] Initial fetch error:', err));
+
+  // Clear any existing interval
+  if (pollingInterval !== null) clearInterval(pollingInterval);
+
+  pollingInterval = setInterval(async () => {
+    if (!currentPollingLocation) return;
+    try {
+      const data = await fetchRealtimeAgroAnalysis(currentPollingLocation);
+      agroListeners.forEach(cb => cb(data));
+    } catch (err) {
+      console.warn('[AgroPolling] Refresh error:', err);
+    }
+  }, 60_000); // 60-second heartbeat
+}
+
+/** Update the location being polled (e.g. after GPS moves to a new field). */
+export function updatePollingLocation(loc: LocationCoordinates): void {
+  currentPollingLocation = loc;
+}
+
+/** Stop the polling heartbeat entirely. */
+export function stopLiveAgroPolling(): void {
+  if (pollingInterval !== null) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+  }
+  currentPollingLocation = null;
+}
+
+/** Register a callback to receive live agro data on each refresh tick. */
+export function subscribeToLiveAgro(listener: AgroDataListener): () => void {
+  agroListeners.add(listener);
+  return () => agroListeners.delete(listener); // Returns unsubscribe fn
+}
+
+// ─── Live Timestamp Formatter ─────────────────────────────────────────────────
+
+/**
+ * Returns a human-readable "live freshness" label given an ISO timestamp.
+ * e.g. "Updated 8s ago", "Updated 1 min ago", "Updated 5 mins ago"
+ */
+export function getLiveTimestampLabel(isoTimestamp: string | null | undefined): string {
+  if (!isoTimestamp) return 'Not yet fetched';
+  const diff = Math.floor((Date.now() - new Date(isoTimestamp).getTime()) / 1000);
+  if (diff < 5)  return 'Live • Just updated';
+  if (diff < 60) return `Live • Updated ${diff}s ago`;
+  const mins = Math.floor(diff / 60);
+  return `Live • Updated ${mins} min${mins > 1 ? 's' : ''} ago`;
+}

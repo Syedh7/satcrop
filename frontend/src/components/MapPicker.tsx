@@ -1,20 +1,25 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { MapContainer, TileLayer, Marker, Popup, Polygon, GeoJSON, useMapEvents, useMap, Tooltip } from 'react-leaflet';
 import L from 'leaflet';
-import { 
-  Search, 
-  Compass, 
-  Layers, 
-  MapPin, 
-  PenTool, 
-  RotateCcw, 
-  Check, 
-  Eye, 
+import {
+  Search,
+  Compass,
+  Layers,
+  MapPin,
+  PenTool,
+  RotateCcw,
+  Check,
+  Eye,
   ShieldCheck,
-  Maximize2
+  Maximize2,
+  Navigation,
+  Loader2,
+  Satellite,
 } from 'lucide-react';
 import { api } from '../services/api';
 import { LocationSearchResult, BoundaryViewMode } from '../types';
+import { liveGeolocationService, getAccuracyLabel } from '../services/liveGeolocationService';
+
 
 // Custom Marker Icon
 const customIcon = new L.Icon({
@@ -152,10 +157,15 @@ export const MapPicker: React.FC<MapPickerProps> = ({
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
   
-  const [mapLayer, setMapLayer] = useState<'satellite' | 'street'>('satellite');
+  const [mapLayer, setMapLayer] = useState<'esri_satellite' | 'esri_topo' | 'osm' | 'stadia_alidade'>('esri_satellite');
   const [boundaryMode, setBoundaryMode] = useState<BoundaryViewMode>('district');
   const [boundaryData, setBoundaryData] = useState<any>(null);
   const [zoomLevel, setZoomLevel] = useState<number>(14);
+
+  // GPS state
+  const [gpsLocating, setGpsLocating] = useState<boolean>(false);
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
+  const [gpsError, setGpsError] = useState<string | null>(null);
 
   // Fetch boundaries on coordinate or region change
   useEffect(() => {
@@ -270,17 +280,21 @@ export const MapPicker: React.FC<MapPickerProps> = ({
     setIsDrawing(false);
   };
 
-  const handleLocateMe = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          handlePositionUpdate([pos.coords.latitude, pos.coords.longitude]);
-          setZoomLevel(16);
-        },
-        () => {
-          handlePositionUpdate([23.1815, 79.9864]);
-        }
-      );
+  const handleLocateMe = async () => {
+    setGpsLocating(true);
+    setGpsError(null);
+    try {
+      const pos = await liveGeolocationService.getCurrentPosition(true);
+      setGpsAccuracy(pos.accuracy);
+      const geo = await liveGeolocationService.reverseGeocode(pos.lat, pos.lng);
+      setDistrict(geo.district);
+      setState(geo.state);
+      await handlePositionUpdate([pos.lat, pos.lng]);
+      setZoomLevel(17);
+    } catch (err: any) {
+      setGpsError(err.message || 'GPS unavailable');
+    } finally {
+      setGpsLocating(false);
     }
   };
 
@@ -402,22 +416,44 @@ export const MapPicker: React.FC<MapPickerProps> = ({
             </button>
           </div>
 
-          {/* Satellite Layer Toggle */}
-          <button
-            onClick={() => setMapLayer(prev => prev === 'satellite' ? 'street' : 'satellite')}
-            className="p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 transition-colors"
-            title="Toggle Satellite Imagery"
-          >
-            <Layers className="w-4 h-4 text-brand-600" />
-          </button>
+          {/* Multi-Layer Satellite Picker */}
+          <div className="flex items-center bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl p-1 shadow-xl border border-slate-200 dark:border-slate-800 text-[10px] font-bold gap-0.5">
+            {(
+              [
+                { key: 'esri_satellite', label: '🛰 SAT' },
+                { key: 'esri_topo', label: '🗺 TOPO' },
+                { key: 'osm', label: '🏔 OSM' },
+              ] as const
+            ).map(({ key, label }) => (
+              <button
+                key={key}
+                onClick={() => setMapLayer(key)}
+                className={`px-2 py-1.5 rounded-xl transition-all ${
+                  mapLayer === key
+                    ? 'bg-brand-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-          {/* Locate Me */}
+          {/* GPS Locate Me */}
           <button
             onClick={handleLocateMe}
-            className="p-2.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl shadow-xl border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-emerald-50 transition-colors"
-            title="Locate Current Position"
+            disabled={gpsLocating}
+            className={`flex items-center gap-1.5 px-3 py-2.5 rounded-2xl shadow-xl border text-xs font-bold transition-all backdrop-blur-md ${
+              gpsLocating
+                ? 'bg-brand-100 dark:bg-brand-900/40 border-brand-300 text-brand-600 cursor-wait'
+                : 'bg-white/95 dark:bg-slate-900/95 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-200 hover:bg-emerald-50'
+            }`}
+            title="Locate my farm using GPS"
           >
-            <Compass className="w-4 h-4 text-brand-600" />
+            {gpsLocating
+              ? <Loader2 className="w-4 h-4 animate-spin text-brand-600" />
+              : <Navigation className="w-4 h-4 text-brand-600" />}
+            <span className="hidden sm:inline">{gpsLocating ? 'Locating…' : 'My Farm'}</span>
           </button>
 
         </div>
@@ -432,18 +468,33 @@ export const MapPicker: React.FC<MapPickerProps> = ({
       >
         <MapController center={[lat, lng]} zoom={zoomLevel} />
         
-        {/* Base Tile Layer */}
-        {mapLayer === 'satellite' ? (
+        {/* Base Tile Layer — 4-option multi-spectral map studio */}
+        {mapLayer === 'esri_satellite' && (
           <TileLayer
-            attribution='&copy; ESRI World Imagery & Maxar'
+            attribution='&copy; <a href="https://www.esri.com">ESRI World Imagery &amp; Maxar</a>'
             url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
             maxZoom={19}
           />
-        ) : (
+        )}
+        {mapLayer === 'esri_topo' && (
           <TileLayer
-            attribution='&copy; OpenStreetMap'
+            attribution='&copy; <a href="https://www.esri.com">ESRI World Topo</a>'
+            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}"
+            maxZoom={19}
+          />
+        )}
+        {mapLayer === 'osm' && (
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             maxZoom={19}
+          />
+        )}
+        {mapLayer === 'stadia_alidade' && (
+          <TileLayer
+            attribution='&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>'
+            url="https://tiles.stadiamaps.com/tiles/alidade_satellite/{z}/{x}/{y}{r}.jpg"
+            maxZoom={20}
           />
         )}
 
@@ -540,12 +591,25 @@ export const MapPicker: React.FC<MapPickerProps> = ({
                 {district}, {state}
               </div>
               <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex flex-wrap items-center gap-x-3">
-                <span>Lat: {lat.toFixed(4)}° N</span>
-                <span>Long: {lng.toFixed(4)}° E</span>
+                <span>Lat: {lat.toFixed(5)}° N</span>
+                <span>Long: {lng.toFixed(5)}° E</span>
                 <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
                   {estimatedArea} Acres (~{(estimatedArea * 0.4047).toFixed(2)} Ha / {(estimatedArea * 1.6).toFixed(1)} Bigha)
                 </span>
               </div>
+              {/* GPS Accuracy Badge */}
+              {gpsAccuracy !== null && (() => {
+                const acc = getAccuracyLabel(gpsAccuracy);
+                return (
+                  <span className={`text-[10px] font-bold mt-1 inline-flex items-center gap-1 ${acc.color}`}>
+                    📡 {acc.label} ±{Math.round(gpsAccuracy)}m
+                  </span>
+                );
+              })()}
+              {/* GPS Error */}
+              {gpsError && (
+                <p className="text-[10px] text-rose-500 font-medium mt-0.5">⚠️ {gpsError}</p>
+              )}
             </div>
           </div>
 
