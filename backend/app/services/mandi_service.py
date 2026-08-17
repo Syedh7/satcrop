@@ -3,7 +3,7 @@ from typing import Dict, Any, List
 class MandiMarketService:
     """
     Provides real-time APMC Mandi market rates, Minimum Support Prices (MSP),
-    and farm revenue forecasting for Indian agricultural commodities.
+    gross revenue forecasting, and net farm profit calculation.
     """
 
     COMMODITY_PRICES = {
@@ -13,6 +13,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 2300,
             "max_price_inr_quintal": 2680,
             "market_trend": "Bullish (Strong Demand)",
+            "avg_cost_per_acre_inr": 12500,
             "primary_mandis": ["Jabalpur Mandi", "Khanna Mandi (Punjab)", "Indore Mandi", "Hapur Mandi"]
         },
         "Soybean": {
@@ -21,6 +22,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 4500,
             "max_price_inr_quintal": 5150,
             "market_trend": "Stable",
+            "avg_cost_per_acre_inr": 14000,
             "primary_mandis": ["Indore Mandi", "Ujjain Mandi", "Nagpur APMC", "Latur Mandi"]
         },
         "Rice (Paddy)": {
@@ -29,6 +31,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 2200,
             "max_price_inr_quintal": 2550,
             "market_trend": "Steady",
+            "avg_cost_per_acre_inr": 16500,
             "primary_mandis": ["Karnal Mandi", "Amritsar Mandi", "Burdwan APMC", "Warangal APMC"]
         },
         "Maize": {
@@ -37,6 +40,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 2050,
             "max_price_inr_quintal": 2380,
             "market_trend": "Bullish (Poultry & Starch demand)",
+            "avg_cost_per_acre_inr": 11500,
             "primary_mandis": ["Chhindwara Mandi", "Gulbarga APMC", "Nizamabad Mandi"]
         },
         "Cotton": {
@@ -45,6 +49,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 6800,
             "max_price_inr_quintal": 7600,
             "market_trend": "High Demand",
+            "avg_cost_per_acre_inr": 18500,
             "primary_mandis": ["Rajkot Mandi", "Adilabad APMC", "Bathinda Cotton Yard", "Yavatmal Mandi"]
         },
         "Gram (Chickpea)": {
@@ -53,6 +58,7 @@ class MandiMarketService:
             "min_price_inr_quintal": 5500,
             "max_price_inr_quintal": 6200,
             "market_trend": "Strong",
+            "avg_cost_per_acre_inr": 9800,
             "primary_mandis": ["Vidisha Mandi", "Bikaner Mandi", "Akola APMC", "Jabalpur Mandi"]
         },
         "Mustard": {
@@ -61,24 +67,37 @@ class MandiMarketService:
             "min_price_inr_quintal": 5600,
             "max_price_inr_quintal": 6300,
             "market_trend": "High Oil Demand",
+            "avg_cost_per_acre_inr": 9200,
             "primary_mandis": ["Alwar Mandi", "Jaipur Mandi", "Morena Mandi"]
         }
     }
 
     @classmethod
-    def get_market_data(cls, crop_name: str, estimated_harvest_quintals: float = 32.5, district: str = "Jabalpur") -> Dict[str, Any]:
+    def get_market_data(
+        cls, 
+        crop_name: str, 
+        estimated_harvest_quintals: float = 32.5, 
+        district: str = "Jabalpur",
+        area_acres: float = 2.45
+    ) -> Dict[str, Any]:
         data = cls.COMMODITY_PRICES.get(crop_name, cls.COMMODITY_PRICES["Wheat"])
         
         modal_rate = data["modal_price_inr_quintal"]
         msp_rate = data["msp_inr_quintal"]
+        cost_per_acre = data["avg_cost_per_acre_inr"]
 
         estimated_revenue_modal = round(estimated_harvest_quintals * modal_rate, 2)
         estimated_revenue_msp = round(estimated_harvest_quintals * msp_rate, 2)
         gain_over_msp = round(estimated_revenue_modal - estimated_revenue_msp, 2)
+        
+        total_estimated_cost = round(cost_per_acre * area_acres, 2)
+        projected_net_profit = round(max(0, estimated_revenue_modal - total_estimated_cost), 2)
+        return_on_investment_pct = round((projected_net_profit / max(total_estimated_cost, 1)) * 100, 1)
 
         return {
             "crop_name": crop_name,
             "district": district,
+            "field_area_acres": area_acres,
             "modal_price_per_quintal": modal_rate,
             "msp_per_quintal": msp_rate,
             "price_range": f"₹{data['min_price_inr_quintal']} - ₹{data['max_price_inr_quintal']}",
@@ -87,7 +106,10 @@ class MandiMarketService:
             "harvest_yield_quintals": estimated_harvest_quintals,
             "estimated_gross_revenue_inr": estimated_revenue_modal,
             "revenue_at_msp_inr": estimated_revenue_msp,
-            "market_premium_inr": max(0, gain_over_msp)
+            "market_premium_inr": max(0, gain_over_msp),
+            "estimated_input_cost_inr": total_estimated_cost,
+            "projected_net_profit_inr": projected_net_profit,
+            "roi_percent": return_on_investment_pct
         }
 
 mandi_service = MandiMarketService()

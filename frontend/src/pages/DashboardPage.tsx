@@ -16,7 +16,12 @@ import {
   Activity, 
   Calendar,
   Sparkles,
-  Layers
+  Layers,
+  AlertTriangle,
+  Droplets,
+  Store,
+  Bug,
+  Calculator
 } from 'lucide-react';
 
 interface DashboardPageProps {
@@ -37,7 +42,6 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
         setStats(res.data);
       } catch (err) {
         console.warn('Dashboard fallback triggered:', err);
-        // Fallback default stats matching reference
         setStats({
           total_fields: 3,
           total_acreage: 8.45,
@@ -138,7 +142,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             Hello, {user?.name ? user.name.split(' ')[0] : 'Farmer'} 👋
           </h1>
           <p className="text-xs sm:text-sm text-emerald-100 font-medium">
-            {getGreetingTime()} • Welcome to your agricultural dashboard
+            {getGreetingTime()} • Welcome to your agricultural intelligence dashboard
           </p>
 
           <div className="inline-flex items-center space-x-2 pt-2 text-xs font-semibold bg-black/20 backdrop-blur-md px-3 py-1.5 rounded-xl">
@@ -169,17 +173,17 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
 
       </div>
 
-      {/* Quick Actions Grid (Matching Reference UI) */}
+      {/* Quick Actions Grid */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-extrabold text-slate-900 dark:text-white">
-            Quick Actions
+            Quick Agricultural Actions
           </h2>
           <button 
             onClick={() => onNavigate('map')}
             className="text-xs font-bold text-brand-600 dark:text-brand-400 hover:underline"
           >
-            View All
+            Launch Map Studio
           </button>
         </div>
 
@@ -195,7 +199,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             </div>
             <div>
               <div className="text-sm font-extrabold">{t('analyzeField')}</div>
-              <div className="text-[11px] text-emerald-100 font-medium">Select on Map & Scan</div>
+              <div className="text-[11px] text-emerald-100 font-medium">Draw Boundary & Scan</div>
             </div>
           </button>
 
@@ -237,7 +241,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
             </div>
             <div>
               <div className="text-sm font-extrabold text-slate-900 dark:text-white">{t('map')}</div>
-              <div className="text-[11px] text-slate-500">Satellite Imagery</div>
+              <div className="text-[11px] text-slate-500">Satellite Imagery & GIS</div>
             </div>
           </button>
 
@@ -298,7 +302,7 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({ onNavigate, onSele
 
       </div>
 
-      {/* Recent Analyses List (Matching Reference UI) */}
+      {/* Recent Analyses List */}
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-base font-extrabold text-slate-900 dark:text-white">

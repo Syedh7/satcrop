@@ -10,6 +10,9 @@ import { FertilizerDosageCard } from '../components/FertilizerDosageCard';
 import { PestDiagnosticModal } from '../components/PestDiagnosticModal';
 import { VoiceAdvisoryButton } from '../components/VoiceAdvisoryButton';
 import { ReportSessionModal } from '../components/ReportSessionModal';
+import { CropTimelineCard } from '../components/CropTimelineCard';
+import { ProfitCalculatorModal } from '../components/ProfitCalculatorModal';
+import { WhatsAppShareButton } from '../components/WhatsAppShareButton';
 import { api } from '../services/api';
 import { 
   Sprout, 
@@ -26,7 +29,8 @@ import {
   Save,
   Plus,
   Bug,
-  Volume2
+  Volume2,
+  Calculator
 } from 'lucide-react';
 
 interface AnalysisResultPageProps {
@@ -49,6 +53,7 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
   const [isSaved, setIsSaved] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showPestModal, setShowPestModal] = useState(false);
+  const [showProfitModal, setShowProfitModal] = useState(false);
   const [savingField, setSavingField] = useState(false);
   const [fieldSaved, setFieldSaved] = useState(false);
 
@@ -69,6 +74,9 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
   const advisoryFertilizer = analysisData.farmer_advisory?.advisory_fertilizer || analysisData.advisory_fertilizer || 'Top-dress with Urea @ 25 kg/acre + DAP @ 15 kg/acre.';
   const advisoryPest = analysisData.farmer_advisory?.advisory_pest || analysisData.advisory_pest || 'Low pest incidence detected. Regular scouting recommended.';
   const confidenceScore = analysisData.crop_detection?.confidence_score || analysisData.confidence_score || 0.95;
+
+  const modalPrice = analysisData.market_revenue?.modal_price_per_quintal || 2450;
+  const grossRevenue = analysisData.market_revenue?.estimated_gross_revenue_inr || 79625;
 
   const textToReadAloud = `Field in ${district}, ${state}. Crop identified is ${cropName} in ${growthStage}. Health status is ${cropHealth} with NDVI score of ${ndvi.toFixed(2)}. Estimated harvest is ${estHarvest} Quintals. Irrigation advice: ${advisoryIrrigation}. Fertilizer advice: ${advisoryFertilizer}.`;
 
@@ -140,8 +148,17 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
         </div>
 
         {/* Voice Advisory Button & Report Actions */}
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2">
           <VoiceAdvisoryButton textToSpeak={textToReadAloud} />
+          <WhatsAppShareButton
+            cropName={cropName}
+            cropHealth={cropHealth}
+            ndvi={ndvi}
+            district={district}
+            state={state}
+            harvestYield={estHarvest}
+            estRevenue={grossRevenue}
+          />
           <button
             onClick={() => setShowReportModal(true)}
             className="px-3.5 py-1.5 rounded-xl bg-slate-900 dark:bg-white text-white dark:text-slate-900 font-bold text-xs shadow-md transition-all flex items-center space-x-1.5"
@@ -293,6 +310,14 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
           </button>
 
           <button
+            onClick={() => setShowProfitModal(true)}
+            className="py-3 px-4 rounded-2xl bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-brand-800 dark:text-brand-300 hover:bg-emerald-100 font-bold text-xs transition-colors flex items-center space-x-1.5"
+          >
+            <Calculator className="w-4 h-4" />
+            <span>Net Profit Calculator</span>
+          </button>
+
+          <button
             onClick={() => setShowPestModal(true)}
             className="py-3 px-4 rounded-2xl bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 hover:bg-amber-100 font-bold text-xs transition-colors flex items-center space-x-1.5"
           >
@@ -312,6 +337,9 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
       </div>
 
+      {/* Crop Growth Phenological Timeline Tracker */}
+      <CropTimelineCard cropName={cropName} currentStage={growthStage} />
+
       {/* 5-Spectral Indices Tabs Component */}
       <SpectralIndexTabs indices={analysisData.spectral_indices || { ndvi }} />
 
@@ -323,6 +351,16 @@ export const AnalysisResultPage: React.FC<AnalysisResultPageProps> = ({
 
       {/* Precision Fertilizer Plan Card */}
       <FertilizerDosageCard dosagePlan={analysisData.fertilizer_dosage} />
+
+      {/* Profit & Input Cost Calculator Modal */}
+      <ProfitCalculatorModal
+        cropName={cropName}
+        fieldAreaAcres={fieldArea}
+        estimatedHarvestQuintals={estHarvest}
+        modalPricePerQuintal={modalPrice}
+        isOpen={showProfitModal}
+        onClose={() => setShowProfitModal(false)}
+      />
 
       {/* Pest & Disease Diagnostic Modal */}
       <PestDiagnosticModal
