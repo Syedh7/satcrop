@@ -3,42 +3,36 @@ import { MapPicker } from '../components/MapPicker';
 import { Sprout, ArrowRight, ShieldCheck, MapPin, Layers, ChevronLeft } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
+interface LocationData {
+  lat: number;
+  lng: number;
+  district: string;
+  state: string;
+  area: number;
+  polygon?: any;
+}
+
 interface MapSelectPageProps {
-  onStartAnalysis: (locationData: {
-    lat: number;
-    lng: number;
-    district: string;
-    state: string;
-    area: number;
-    polygon?: any;
-  }) => void;
+  onStartAnalysis: (locationData: LocationData) => void;
   onCancel: () => void;
 }
 
 export const MapSelectPage: React.FC<MapSelectPageProps> = ({ onStartAnalysis, onCancel }) => {
   const { t } = useLanguage();
-  const [currentLocation, setCurrentLocation] = useState<{
-    lat: number;
-    lng: number;
-    district: string;
-    state: string;
-    area: number;
-    polygon?: any;
-  }>({
-    lat: 23.1815,
-    lng: 79.9864,
-    district: 'Jabalpur',
-    state: 'Madhya Pradesh',
-    area: 2.45
-  });
 
-  const handleLocationChange = (loc: any) => {
+  // null = user has NOT selected a location yet — no default Jabalpur
+  const [currentLocation, setCurrentLocation] = useState<LocationData | null>(null);
+
+  const handleLocationChange = (loc: LocationData) => {
     setCurrentLocation(loc);
   };
 
   const handleAnalyzeClick = () => {
+    if (!currentLocation) return;
     onStartAnalysis(currentLocation);
   };
+
+  const canAnalyze = currentLocation !== null && currentLocation.lat !== 0;
 
   return (
     <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-4 sm:space-y-5 pb-24 md:pb-12">
@@ -63,12 +57,14 @@ export const MapSelectPage: React.FC<MapSelectPageProps> = ({ onStartAnalysis, o
               Select Field Location
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
-              Search location or drop a pin on your agricultural land to initiate AI analysis.
+              {canAnalyze
+                ? `📍 ${currentLocation!.district}, ${currentLocation!.state} — Ready to analyse`
+                : 'Tap anywhere on the map to drop a pin on your agricultural land.'}
             </p>
           </div>
         </div>
 
-        {/* Action Button Desktop */}
+        {/* Action Buttons — Desktop */}
         <div className="flex items-center space-x-2">
           <button
             onClick={onCancel}
@@ -80,21 +76,22 @@ export const MapSelectPage: React.FC<MapSelectPageProps> = ({ onStartAnalysis, o
 
           <button
             onClick={handleAnalyzeClick}
-            className="hidden sm:flex items-center space-x-2 px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-sm shadow-lg shadow-brand-600/30 transition-all"
+            disabled={!canAnalyze}
+            className={`hidden sm:flex items-center space-x-2 px-6 py-3 rounded-xl font-extrabold text-sm shadow-lg transition-all ${
+              canAnalyze
+                ? 'bg-brand-600 hover:bg-brand-700 active:scale-95 text-white shadow-brand-600/30'
+                : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
+            }`}
           >
             <Sprout className="w-5 h-5" />
-            <span>{t('analyzeField')}</span>
-            <ArrowRight className="w-4 h-4" />
+            <span>{canAnalyze ? t('analyzeField') : 'Select a location first'}</span>
+            {canAnalyze && <ArrowRight className="w-4 h-4" />}
           </button>
         </div>
       </div>
 
-      {/* Interactive Map Component */}
+      {/* Interactive Map Component — no initial location passed */}
       <MapPicker
-        initialLat={currentLocation.lat}
-        initialLng={currentLocation.lng}
-        initialDistrict={currentLocation.district}
-        initialState={currentLocation.state}
         onLocationChange={handleLocationChange}
       />
 
@@ -108,11 +105,16 @@ export const MapSelectPage: React.FC<MapSelectPageProps> = ({ onStartAnalysis, o
         </button>
         <button
           onClick={handleAnalyzeClick}
-          className="flex-1 py-3.5 px-6 rounded-2xl bg-brand-600 hover:bg-brand-700 active:scale-95 text-white font-extrabold text-sm shadow-xl shadow-brand-600/40 flex items-center justify-center space-x-2 transition-all"
+          disabled={!canAnalyze}
+          className={`flex-1 py-3.5 px-6 rounded-2xl font-extrabold text-sm shadow-xl flex items-center justify-center space-x-2 transition-all ${
+            canAnalyze
+              ? 'bg-brand-600 hover:bg-brand-700 active:scale-95 text-white shadow-brand-600/40'
+              : 'bg-slate-200 dark:bg-slate-800 text-slate-400 dark:text-slate-600 cursor-not-allowed shadow-none'
+          }`}
         >
           <Sprout className="w-5 h-5" />
-          <span>{t('analyzeField')}</span>
-          <ArrowRight className="w-4 h-4" />
+          <span>{canAnalyze ? t('analyzeField') : 'Select a location first'}</span>
+          {canAnalyze && <ArrowRight className="w-4 h-4" />}
         </button>
       </div>
 
