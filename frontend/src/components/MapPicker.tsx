@@ -99,7 +99,8 @@ const MapClickHandler: React.FC<{
   onPositionChange: (pos: [number, number]) => void;
   onAddPolygonPoint: (point: [number, number]) => void;
   position: [number, number];
-}> = ({ isDrawingPolygon, onPositionChange, onAddPolygonPoint, position }) => {
+  showMarker: boolean;
+}> = ({ isDrawingPolygon, onPositionChange, onAddPolygonPoint, position, showMarker }) => {
   useMapEvents({
     click(e) {
       if (isDrawingPolygon) {
@@ -110,7 +111,7 @@ const MapClickHandler: React.FC<{
     },
   });
 
-  if (isDrawingPolygon) return null;
+  if (isDrawingPolygon || !showMarker) return null;
 
   return (
     <Marker
@@ -136,18 +137,26 @@ const MapClickHandler: React.FC<{
 };
 
 export const MapPicker: React.FC<MapPickerProps> = ({
-  initialLat = 23.1815,
-  initialLng = 79.9864,
-  initialDistrict = 'Jabalpur',
-  initialState = 'Madhya Pradesh',
+  initialLat,
+  initialLng,
+  initialDistrict,
+  initialState,
   onLocationChange
 }) => {
-  const [lat, setLat] = useState<number>(initialLat);
-  const [lng, setLng] = useState<number>(initialLng);
-  const [district, setDistrict] = useState<string>(initialDistrict);
-  const [state, setState] = useState<string>(initialState);
+  // India center — map opens here with NO pre-selected location
+  const INDIA_CENTER_LAT = 22.9734;
+  const INDIA_CENTER_LNG = 78.6569;
+
+  // `null` means the user has NOT yet clicked — no pin, no district label shown
+  const [lat, setLat] = useState<number | null>(initialLat ?? null);
+  const [lng, setLng] = useState<number | null>(initialLng ?? null);
+  const [district, setDistrict] = useState<string>(initialDistrict ?? '');
+  const [state, setState] = useState<string>(initialState ?? '');
   const [estimatedArea, setEstimatedArea] = useState<number>(2.45);
-  
+  const [hasPinned, setHasPinned] = useState<boolean>(
+    initialLat != null && initialLng != null
+  );
+
   // Polygon Drawing state
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [polygonPoints, setPolygonPoints] = useState<[number, number][]>([]);
@@ -156,19 +165,21 @@ export const MapPicker: React.FC<MapPickerProps> = ({
   const [searchResults, setSearchResults] = useState<LocationSearchResult[]>([]);
   const [isSearching, setIsSearching] = useState<boolean>(false);
   const [showSearchResults, setShowSearchResults] = useState<boolean>(false);
-  
+
   const [mapLayer, setMapLayer] = useState<'esri_satellite' | 'esri_topo' | 'osm' | 'stadia_alidade'>('esri_satellite');
   const [boundaryMode, setBoundaryMode] = useState<BoundaryViewMode>('district');
   const [boundaryData, setBoundaryData] = useState<any>(null);
-  const [zoomLevel, setZoomLevel] = useState<number>(14);
+  // Start zoomed out to show all of India
+  const [zoomLevel, setZoomLevel] = useState<number>(initialLat != null ? 14 : 5);
 
   // GPS state
   const [gpsLocating, setGpsLocating] = useState<boolean>(false);
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null);
   const [gpsError, setGpsError] = useState<string | null>(null);
 
-  // Fetch boundaries on coordinate or region change
+  // Only fetch boundaries once the user has actually selected a point
   useEffect(() => {
+    if (!hasPinned || lat == null || lng == null || !district) return;
     const fetchBoundaries = async () => {
       try {
         const res = await api.get('/geo/boundaries', {
@@ -180,7 +191,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({
       }
     };
     fetchBoundaries();
-  }, [district, state, lat, lng]);
+  }, [district, state, lat, lng, hasPinned]);
 
   // Recalculate area whenever custom polygon points change
   useEffect(() => {
@@ -190,8 +201,9 @@ export const MapPicker: React.FC<MapPickerProps> = ({
     }
   }, [polygonPoints]);
 
-  // Notify parent of location & area updates
+  // Notify parent of location & area updates — only after user has pinned
   useEffect(() => {
+    if (!hasPinned || lat == null || lng == null) return;
     const currentPolygon = polygonPoints.length >= 3 ? {
       type: 'Feature',
       properties: { name: 'Custom Field Polygon', type: 'custom_field' },
@@ -209,7 +221,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({
       area: estimatedArea,
       polygon: currentPolygon
     });
-  }, [lat, lng, district, state, estimatedArea, polygonPoints, boundaryData]);
+  }, [lat, lng, district, state, estimatedArea, polygonPoints, boundaryData, hasPinned]);
 
   // Location search handler
   const handleSearch = async (query: string) => {
@@ -245,6 +257,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({
     setLng(item.lng);
     setDistrict(item.district);
     setState(item.state);
+    setHasPinned(true);  // ← user chose a location via search
     setSearchQuery(item.name);
     setShowSearchResults(false);
     setPolygonPoints([]);
@@ -256,6 +269,7 @@ export const MapPicker: React.FC<MapPickerProps> = ({
     const newLng = parseFloat(pos[1].toFixed(5));
     setLat(newLat);
     setLng(newLng);
+    setHasPinned(true);  // ← user tapped the map
 
     try {
       const res = await api.get('/geo/reverse', { params: { lat: newLat, lng: newLng } });
@@ -461,12 +475,18 @@ export const MapPicker: React.FC<MapPickerProps> = ({
 
       {/* Main Leaflet Map */}
       <MapContainer
-        center={[lat, lng]}
+        center={[
+          lat ?? INDIA_CENTER_LAT,
+          lng ?? INDIA_CENTER_LNG
+        ]}
         zoom={zoomLevel}
         scrollWheelZoom={true}
         className="w-full h-full"
       >
-        <MapController center={[lat, lng]} zoom={zoomLevel} />
+        <MapController
+          center={[lat ?? INDIA_CENTER_LAT, lng ?? INDIA_CENTER_LNG]}
+          zoom={zoomLevel}
+        />
         
         {/* Base Tile Layer — 4-option multi-spectral map studio */}
         {mapLayer === 'esri_satellite' && (
@@ -566,55 +586,74 @@ export const MapPicker: React.FC<MapPickerProps> = ({
           />
         )}
 
-        {/* Click & Pin Handling */}
+        {/* Click & Pin Handling — only show marker after user has tapped */}
         <MapClickHandler
           isDrawingPolygon={isDrawing}
-          position={[lat, lng]}
+          position={[lat ?? INDIA_CENTER_LAT, lng ?? INDIA_CENTER_LNG]}
           onPositionChange={handlePositionUpdate}
           onAddPolygonPoint={handleAddPolygonPoint}
+          showMarker={hasPinned}
         />
       </MapContainer>
 
       {/* Bottom Floating Card */}
       <div className="absolute bottom-3 left-3 right-3 z-[1000] bg-white/95 dark:bg-slate-900/95 backdrop-blur-md rounded-2xl p-4 shadow-2xl border border-emerald-100 dark:border-slate-800">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/80 text-brand-600 flex items-center justify-center font-bold text-lg shadow-inner shrink-0">
-              📍
+
+          {!hasPinned ? (
+            /* ── No location selected yet ── */
+            <div className="flex items-center gap-3 w-full">
+              <div className="w-10 h-10 rounded-2xl bg-brand-50 dark:bg-brand-950/60 text-brand-600 flex items-center justify-center text-xl shrink-0 animate-pulse">
+                👆
+              </div>
+              <div>
+                <div className="text-sm font-black text-slate-900 dark:text-white">
+                  Tap anywhere on the map to select your farm
+                </div>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Or use the search bar above • Or tap "My Farm" for GPS location
+                </p>
+              </div>
             </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider font-extrabold text-brand-700 dark:text-brand-400">
-                Selected Field Coordinates
+          ) : (
+            /* ── Location selected ── */
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 dark:bg-emerald-950/80 text-brand-600 flex items-center justify-center font-bold text-lg shadow-inner shrink-0">
+                📍
               </div>
-              <div className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
-                {district}, {state}
-              </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex flex-wrap items-center gap-x-3">
-                <span>Lat: {lat.toFixed(5)}° N</span>
-                <span>Long: {lng.toFixed(5)}° E</span>
-                <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
-                  {estimatedArea} Acres (~{(estimatedArea * 0.4047).toFixed(2)} Ha / {(estimatedArea * 1.6).toFixed(1)} Bigha)
-                </span>
-              </div>
-              {/* GPS Accuracy Badge */}
-              {gpsAccuracy !== null && (() => {
-                const acc = getAccuracyLabel(gpsAccuracy);
-                return (
-                  <span className={`text-[10px] font-bold mt-1 inline-flex items-center gap-1 ${acc.color}`}>
-                    📡 {acc.label} ±{Math.round(gpsAccuracy)}m
+              <div>
+                <div className="text-[10px] uppercase tracking-wider font-extrabold text-brand-700 dark:text-brand-400">
+                  Selected Field Coordinates
+                </div>
+                <div className="text-sm sm:text-base font-black text-slate-900 dark:text-white">
+                  {district || 'Detecting location…'}{state ? `, ${state}` : ''}
+                </div>
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 flex flex-wrap items-center gap-x-3">
+                  <span>Lat: {lat?.toFixed(5)}° N</span>
+                  <span>Long: {lng?.toFixed(5)}° E</span>
+                  <span className="font-extrabold text-emerald-600 dark:text-emerald-400">
+                    {estimatedArea} Acres (~{(estimatedArea * 0.4047).toFixed(2)} Ha / {(estimatedArea * 1.6).toFixed(1)} Bigha)
                   </span>
-                );
-              })()}
-              {/* GPS Error */}
-              {gpsError && (
-                <p className="text-[10px] text-rose-500 font-medium mt-0.5">⚠️ {gpsError}</p>
-              )}
+                </div>
+                {/* GPS Accuracy Badge */}
+                {gpsAccuracy !== null && (() => {
+                  const acc = getAccuracyLabel(gpsAccuracy);
+                  return (
+                    <span className={`text-[10px] font-bold mt-1 inline-flex items-center gap-1 ${acc.color}`}>
+                      📡 {acc.label} ±{Math.round(gpsAccuracy)}m
+                    </span>
+                  );
+                })()}
+                {/* GPS Error */}
+                {gpsError && (
+                  <p className="text-[10px] text-rose-500 font-medium mt-0.5">⚠️ {gpsError}</p>
+                )}
+              </div>
             </div>
-          </div>
+          )}
 
           {isDrawing && (
-            <div className="text-right">
+            <div className="text-right shrink-0">
               <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 block animate-pulse">
                 Polygon Drawing Active ({polygonPoints.length} Points)
               </span>
